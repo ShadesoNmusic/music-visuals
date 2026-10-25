@@ -6,7 +6,7 @@ import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 // Pass 6b: faster flash release + darker idle/settle void
-// Pass 6c: hard-cut flash/snatch 2–3f (no magenta fade); portals + void pocket kept
+// Pass 6d: settle snap after hard-cut snatch; portals + 2–3f flash kept
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -253,7 +253,7 @@ export function createVisual(canvas, audio) {
   };
   const glitch = new ShaderPass(EdgeGlitch);
   composer.addPass(glitch);
-  let glitchLeft = 0, afterCool = 0;
+  let glitchLeft = 0, afterCool = 0, settleKill = 0;
   // 6b: radial void gate + centre luma clamp (LAST pass) — caps pocket ≤120/255 outside snatch
   const VoidGate = {
     uniforms: { tDiffuse: { value: null }, cap: { value: 0.45 }, radius: { value: 0.32 }, aspect: { value: W / H }, open: { value: 0 } },
@@ -441,6 +441,7 @@ export function createVisual(canvas, audio) {
       kickFlash.uniforms.amt.value = 0.85 + kick * 0.15;
       flashLeft--;
       dampBase_force = 0.05;
+      if (flashLeft === 0) settleKill = Math.max(settleKill, 18); // 6d: snap pocket dark after hard cut
     } else {
       // 6c: hard cut after 2–3f — no magenta fade tail
       kickFlash.uniforms.mode.value = 0;
@@ -457,11 +458,16 @@ export function createVisual(canvas, audio) {
     if (dampBase_force) dampBase = dampBase_force;
     if (peak > 0.5) dampBase = Math.min(dampBase, 0.08);
     if (afterCool > 0) { dampBase = Math.min(dampBase, 0.04); afterCool--; }
+    // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
+    if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = (afterCool > 0 && flashLeft <= 0 ? 0.08 : 0.12) + Math.min(0.22, kick * 0.15 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
+    bloom.strength = (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.22, kick * 0.15 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
+    // 6d: tighter settle clamp (idle floor) after snatch
+    voidGate.uniforms.cap.value = settleKill > 0 ? 0.38 : 0.45;
+    voidGate.uniforms.radius.value = settleKill > 0 ? 0.40 : 0.32;
     scene.background.setHex(flashLeft > 0 ? BG : 0x000000); // blackout between hits
-    renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : (afterCool > 0 ? 0.72 : 0.82);
+    renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.72 : 0.82));
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
