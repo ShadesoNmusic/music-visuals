@@ -107,11 +107,37 @@ export function createVisual(canvas, audio) {
   composer.addPass(after);
   const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.42, 0.3, 0.65);
   composer.addPass(bloom);
-  // Pass 4a — DigitalGlitch only on hits (kick/high), not constant noise
+  // Pass 4b — DigitalGlitch on hits; custom burst so tear reads in stills
   const glitch = new GlitchPass(32);
   glitch.goWild = false;
   composer.addPass(glitch);
   let glitchLeft = 0;
+  const _glitchRender = glitch.render.bind(glitch);
+  glitch.render = (renderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
+    if (glitchLeft > 0) {
+      const u = glitch.uniforms;
+      u.tDiffuse.value = readBuffer.texture;
+      u.byp.value = 0;
+      u.amount.value = 0.14 + Math.random() * 0.1;
+      u.angle.value = (Math.random() * 2 - 1) * Math.PI;
+      u.seed.value = Math.random();
+      u.seed_x.value = (Math.random() * 2 - 1) * 0.7;
+      u.seed_y.value = (Math.random() * 2 - 1) * 0.7;
+      u.distortion_x.value = Math.random();
+      u.distortion_y.value = Math.random();
+      if (glitch.renderToScreen) {
+        renderer.setRenderTarget(null);
+        glitch.fsQuad.render(renderer);
+      } else {
+        renderer.setRenderTarget(writeBuffer);
+        if (glitch.clear) renderer.clear();
+        glitch.fsQuad.render(renderer);
+      }
+    } else {
+      glitch.uniforms.byp.value = 1;
+      _glitchRender(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    }
+  };
 
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
   const zAxis = new THREE.Vector3(0, 0, 1), xAxis = new THREE.Vector3(1, 0, 0);
@@ -235,17 +261,9 @@ export function createVisual(canvas, audio) {
     const dampBase = 0.60 + Math.min(0.05, bass * 0.03);
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
-    // 4b: longer bursts so CA/block tear reads in stills/exports (~8–12 frames @60)
+    // 4b: ~10-frame bursts; strong amount applied inside glitch.render override
     if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) glitchLeft = Math.max(glitchLeft, 10);
-    glitch.goWild = glitchLeft > 0;
-    if (glitchLeft > 0) {
-      glitchLeft--;
-      // punch amount while wild so a single export frame still shows tear
-      glitch.uniforms.amount.value = 0.08 + kick * 0.12 + highHit * 0.1;
-      glitch.uniforms.byp.value = 0;
-    } else {
-      glitch.uniforms.byp.value = 1;
-    }
+    if (glitchLeft > 0) glitchLeft--;
     composer.render();
   }
   return { frame, renderer };
