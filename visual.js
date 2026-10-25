@@ -169,7 +169,9 @@ export function createVisual(canvas, audio) {
     camLight.position.copy(camera.position);
     camLight.intensity = 30 + bass * 20;
 
-    after.uniforms.damp.value = 0.70 + Math.min(0.06, bass * 0.04); // short trails; avoid wash
+    // fps-independent trails: at low fps, lower damp so frames don't over-stack
+    const fpsScale = Math.min(1, dt * 60);
+    after.uniforms.damp.value = (0.72 + Math.min(0.06, bass * 0.04)) * fpsScale;
     bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
     composer.render();
   }
