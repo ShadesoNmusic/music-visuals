@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Pass 4c2: wider centre dead-zone + 10f edge glitch (void gate) + 3a + 2f
+// Pass 4d: edge glitch + kill Afterimage during burst (stop void smear) + 3a + 2f
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -142,15 +142,17 @@ export function createVisual(canvas, audio) {
         vec2 dir = vec2(cos(angle), sin(angle));
         vec2 off = dir * amp * (0.35 + band * 1.8);
         float cs = colShift * amp * 2.2;
+        vec3 base = texture2D(tDiffuse, vUv).rgb;
         float r = texture2D(tDiffuse, vUv + off + vec2(cs, 0.0)).r;
         float g = texture2D(tDiffuse, vUv + off).g;
         float b = texture2D(tDiffuse, vUv + off - vec2(cs, 0.0)).b;
-        gl_FragColor = vec4(r, g, b, 1.0);
+        vec3 torn = min(vec3(r, g, b), base * 1.02); // dark offsets — no bright wash
+        gl_FragColor = vec4(mix(base, torn, edge), 1.0);
       }`,
   };
   const glitch = new ShaderPass(EdgeGlitch);
   composer.addPass(glitch);
-  let glitchLeft = 0;
+  let glitchLeft = 0, afterCool = 0;
 
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
   const zAxis = new THREE.Vector3(0, 0, 1), xAxis = new THREE.Vector3(1, 0, 0);
@@ -271,11 +273,15 @@ export function createVisual(canvas, audio) {
     glob.position.z = -5 + Math.sin(t * 0.5) * 0.15;
 
     // frame-rate independent trails: pow so large dt (low fps) shortens persistence
-    const dampBase = 0.60 + Math.min(0.05, bass * 0.03);
+        // 4d: during/after glitch, kill trails so edge tear can't smear into void
+    if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) {
+      glitchLeft = Math.max(glitchLeft, 10);
+      afterCool = Math.max(afterCool, 14);
+    }
+    let dampBase = 0.60 + Math.min(0.05, bass * 0.03);
+    if (afterCool > 0) { dampBase = Math.min(dampBase, 0.22); afterCool--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
-    // 4c: ~8-frame edge-only bursts — readable tear, void centre stays dark
-    if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) glitchLeft = Math.max(glitchLeft, 10);
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
