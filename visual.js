@@ -197,7 +197,9 @@ export function createVisual(canvas, audio) {
         } else if (mode < 2.5) {
           gl_FragColor = vec4(mix(c.rgb, vec3(1.0, 0.0, 0.8), amt), 1.0);
         } else if (mode < 3.5) {
-          gl_FragColor = vec4(mix(c.rgb, vec3(0.0, 1.0, 0.95), amt), 1.0);
+          gl_FragColor = vec4(mix(c.rgb, vec3(0.15, 0.85, 1.0), amt) + vec3(0.25,0.0,0.35)*amt, 1.0);
+        } else if (mode > 4.5) {
+          gl_FragColor = vec4(mix(c.rgb, vec3(1.0), amt) * (1.0 + amt), 1.0); // 7b white burst
         } else {
           float s = 0.012 * amt;
           float r = texture2D(tDiffuse, vUv + vec2(s, 0.0)).r;
@@ -209,6 +211,7 @@ export function createVisual(canvas, audio) {
   };
   const kickFlash = new ShaderPass(KickFlash);
   composer.addPass(kickFlash);
+  let popS = 0, shakeA = 0, zPunch = 0, hueSnap = 0; // 7b beat violence
   let flashLeft = 0, flashMode = 0, lastFlashT = -1, dampBase_force = 0;
 
       // Pass 4c — edge-biased RGB/block tear; centre-third (hook/void) stays clean
@@ -411,10 +414,14 @@ export function createVisual(canvas, audio) {
     camera.position.x = Math.sin(t * 0.6 + bassTime * 0.12) * drift;
     camera.position.y = Math.cos(t * 0.6 + bassTime * 0.12) * drift * 0.8;
     camera.rotation.z = Math.sin(t * 0.15) * 0.35 + bassTime * 0.01 + mid * 0.08;
-    camera.lookAt(0, 0, -40); // 7a deeper vanishing point
+    // 7b: shake jitter + aggressive Z punch (decay fast)
+    camera.position.x += (Math.random() * 2 - 1) * shakeA;
+    camera.position.y += (Math.random() * 2 - 1) * shakeA;
+    camera.position.z = 3 - zPunch;
+    camera.lookAt((Math.random() * 2 - 1) * shakeA * 2, (Math.random() * 2 - 1) * shakeA * 2, -40 + zPunch * 6); // lookAt snap
     camera.rotation.z += Math.sin(t * 0.15) * 0.35 + bassTime * 0.04;
     camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0); camera.updateProjectionMatrix();
-    const ks = 1 + kick * 0.14; root.scale.set(ks, ks, 1);
+    const ks = 1 + kick * 0.14 + popS; root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
     camLight.intensity = 18 + bass * 35 + kick * 25;
     // glob tracks camera lightly — stays in centre-third for hook overlay
@@ -441,10 +448,15 @@ export function createVisual(canvas, audio) {
       gateLurch = GATE_SPACING * 1.0; // gate lurch one step
       afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
+      popS = 0.15 + kick * 0.05; shakeA = 0.35; zPunch = 1.6; hueSnap = (hueSnap + 1) % 3;
+      flashMode = [2, 3, 5][hueSnap]; if (peak > 0.85) flashMode = 1; // 7b hue snap mag/cyan/white
     }
+    if (bassHit > 0.6 || kick > 0.5) { zPunch = Math.max(zPunch, 0.9 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.12 * kick); popS = Math.max(popS, 0.08 * kick); }
+    const vd = Math.pow(0.78, Math.max(0.5, dt * 60));
+    popS *= vd; shakeA *= vd; zPunch *= Math.pow(0.85, Math.max(0.5, dt * 60));
     if (flashLeft > 0) {
       kickFlash.uniforms.mode.value = flashMode;
-      kickFlash.uniforms.amt.value = 0.85 + kick * 0.15;
+      kickFlash.uniforms.amt.value = Math.min(1.0, 0.95 + kick * 0.05); // 7b near-full burst
       flashLeft--;
       dampBase_force = 0.05;
       if (flashLeft === 0) settleKill = Math.max(settleKill, 18); // 6d: snap pocket dark after hard cut
@@ -467,13 +479,13 @@ export function createVisual(canvas, audio) {
     // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.32) + Math.min(0.45, kick * 0.35 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
+    bloom.strength = flashLeft > 0 ? 1.0 + kick * 0.2 : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.32) + Math.min(0.45, kick * 0.35 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.36 : 0.40;
     voidGate.uniforms.radius.value = settleKill > 0 ? 0.46 : 0.42;
     scene.background.setHex(flashLeft > 0 ? BG : 0x000000); // blackout between hits
-    renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.72 : 0.82));
+    renderer.toneMappingExposure = flashLeft > 0 ? 2.2 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.72 : 0.82));
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
