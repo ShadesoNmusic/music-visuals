@@ -27,7 +27,7 @@ export function createVisual(canvas, audio) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG);
-  scene.fog = new THREE.FogExp2(BG, 0.042);
+  scene.fog = new THREE.FogExp2(BG, 0.055);
   const camera = new THREE.PerspectiveCamera(72, W / H, 0.1, 200);
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
@@ -79,9 +79,9 @@ export function createVisual(canvas, audio) {
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(2); composer.setSize(W, H);
   composer.addPass(new RenderPass(scene, camera));
-  const after = new AfterimagePass(0.88);
+  const after = new AfterimagePass(0.72); // was 0.88 — washed centre ~171 at low fps
   composer.addPass(after);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.5, 0.35, 0.6);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.42, 0.3, 0.65);
   composer.addPass(bloom);
 
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
@@ -132,7 +132,7 @@ export function createVisual(canvas, audio) {
         pillars.setMatrixAt(idx, m4);
 
         cosPalette(s * 0.35 + depthT * 0.6 + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, col);
-        col.multiplyScalar(0.55);
+        col.multiplyScalar(0.42);
         pillars.setColorAt(idx, col);
 
         // cap on inner face, facing the axis
@@ -169,8 +169,8 @@ export function createVisual(canvas, audio) {
     camLight.position.copy(camera.position);
     camLight.intensity = 30 + bass * 20;
 
-    after.uniforms.damp.value = 0.86 + Math.min(0.04, bass * 0.04) + Math.min(0.02, bassAtt * 0.03);
-    bloom.strength = 0.45 + Math.min(0.15, bass * 0.1 + bassAtt * 0.08); // parked: 0.45–0.60
+    after.uniforms.damp.value = 0.70 + Math.min(0.06, bass * 0.04); // short trails; avoid wash
+    bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
     composer.render();
   }
   return { frame, renderer };
