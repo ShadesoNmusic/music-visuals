@@ -4,9 +4,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 
-// Pass 2d: chunky hex-pillar tunnel (InstancedMesh) — readable hex flats, not thin rings
+// Pass 2f: silhouette dial — fat hex flats that read in TikTok stills (not thin rings)
 const W = 540, H = 960;
-const RINGS = 36, PER_RING = 12, SPACING = 2.2; // fewer, chunkier hexes so they read as pillars not rings
+const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
 const DEPTH = RINGS * SPACING;
 const BG = 0x020205;
@@ -27,7 +27,7 @@ export function createVisual(canvas, audio) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG);
-  scene.fog = new THREE.FogExp2(BG, 0.055);
+  scene.fog = new THREE.FogExp2(BG, 0.07);
   const camera = new THREE.PerspectiveCamera(72, W / H, 0.1, 200);
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
@@ -36,8 +36,9 @@ export function createVisual(canvas, audio) {
   const camLight = new THREE.PointLight(0xffffff, 40, 30, 1.6);
   scene.add(camLight);
 
-  // Hex pillar: 6-sided prism along Y, base at y=0 so it grows outward from the inner face
+  // Hex pillar: 6-sided prism along Y; rotateY so a flat faces the tunnel axis
   const geo = new THREE.CylinderGeometry(1, 1, 1, 6, 1);
+  geo.rotateY(Math.PI / 6);
   geo.translate(0, 0.5, 0);
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x111122, flatShading: true });
   const pillars = new THREE.InstancedMesh(geo, mat, COUNT);
@@ -46,6 +47,7 @@ export function createVisual(canvas, audio) {
 
   // Thin emissive caps (inner faces) — additive neon edge read
   const capGeo = new THREE.CircleGeometry(1, 6);
+  capGeo.rotateZ(Math.PI / 6); // flat-top hex, matches pillar
   const capMat = new THREE.MeshBasicMaterial({
     color: 0xffffff, transparent: true, opacity: 0.35,
     blending: THREE.AdditiveBlending, depthWrite: false,
@@ -79,7 +81,7 @@ export function createVisual(canvas, audio) {
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(2); composer.setSize(W, H);
   composer.addPass(new RenderPass(scene, camera));
-  const after = new AfterimagePass(0.72); // was 0.88 — washed centre ~171 at low fps
+  const after = new AfterimagePass(0.60); // 2f: less smear so hex edges survive stills
   composer.addPass(after);
   const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.42, 0.3, 0.65);
   composer.addPass(bloom);
@@ -103,7 +105,7 @@ export function createVisual(canvas, audio) {
     speed += ((7 + bass * 22 + kick * 14) - speed) * 0.1;
     scroll += speed * dt;
     const radius = 2.4 + bass * 0.5 + bassAtt * 0.35 + kick * 0.25;
-    const thick = 0.55 + bass * 0.18 + bassHit * 0.12; // chunky hex cross-section
+    const thick = 0.95 + bass * 0.22 + bassHit * 0.15; // fat hex cross-section — silhouette first
     const palDrive = mid * 0.4 + midHit * 0.25 + bassTime * 0.02;
     const twist = t * 0.08 + bassTime * 0.03;
     const sp = spec();
@@ -123,7 +125,7 @@ export function createVisual(canvas, audio) {
         // inner face pushes in with spectrum/treble → organic relief
         const inward = s * 0.5 + band * 0.9 + Math.sin(t * 1.3 + ringPhase[r] + k) * (0.08 + midAtt * 0.25) + highHit * s * 0.3;
         const inner = Math.max(0.9, radius - inward);
-        const len = 2.2 + inward * 0.85;
+        const len = 1.35 + inward * 0.55; // shorter radial so end-on reads as hex, not a streak
         const ca = Math.cos(a), sa = Math.sin(a);
         pos.set(ca * inner, sa * inner, z);
         q.setFromAxisAngle(zAxis, a - Math.PI / 2); // local +Y points outward
@@ -138,7 +140,7 @@ export function createVisual(canvas, audio) {
         // cap on inner face, facing the axis
         pos.set(ca * (inner - 0.01), sa * (inner - 0.01), z);
         qTmp.copy(q).multiply(qCap);
-        scl.set(thick * 1.15, thick * 1.15, 1); // oversized hex caps — readable flats
+        scl.set(thick * 1.4, thick * 1.4, 1); // oversized hex caps — dominate the frame
         m4.compose(pos, qTmp, scl);
         caps.setMatrixAt(idx, m4);
         const glow = 0.25 + band * 0.6 + (s > 0.85 ? midHit * 0.8 : 0);
@@ -170,7 +172,7 @@ export function createVisual(canvas, audio) {
     camLight.intensity = 30 + bass * 20;
 
     // frame-rate independent trails: pow so large dt (low fps) shortens persistence
-    const dampBase = 0.72 + Math.min(0.06, bass * 0.04);
+    const dampBase = 0.60 + Math.min(0.05, bass * 0.03);
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
     composer.render();
