@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// Pass 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
+// Pass 9b: opaque mid-grey concrete mass, wet floor raised into view (Reflector half-res + shiny wet plane + neon strips), kaleido/afterimage cut for sharp stills; 9a kick violence + void clamp kept. Was 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
 const W = 540, H = 960;
 const RINGS = 24, PER_RING = 8, SPACING = 2.7; // 9a denser pillars // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -49,7 +49,7 @@ export function createVisual(canvas, audio) {
     for (let i = 0; i < id.data.length; i += 4) { const v = 150 + Math.random() * 90 - ((i >> 2) % 37 === 0 ? 60 : 0); id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
     gx.putImageData(id, 0, 0); }
   const grainTex = new THREE.CanvasTexture(grainCv); grainTex.wrapS = grainTex.wrapT = THREE.RepeatWrapping; grainTex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: grainTex, roughnessMap: grainTex, emissive: 0x0a0a14, roughness: 0.9, metalness: 0.2, flatShading: true });
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: grainTex, roughnessMap: grainTex, emissive: 0x050508, roughness: 0.9, metalness: 0.1, flatShading: true });
   const pillars = new THREE.InstancedMesh(geo, mat, COUNT);
   pillars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(pillars);
@@ -58,15 +58,14 @@ export function createVisual(canvas, audio) {
   const capGeo = new THREE.CircleGeometry(1, 6);
   capGeo.rotateZ(Math.PI / 6); // flat-top hex, matches pillar
   const capMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.35,
-    blending: THREE.AdditiveBlending, depthWrite: false,
+    color: 0xffffff, transparent: true, opacity: 0.1, depthWrite: false, // 9b: no additive shards
   });
   const caps = new THREE.InstancedMesh(capGeo, capMat, COUNT);
   caps.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(caps);
 
   // Pass 6a — nested neon portal gates (hex frames → vanishing point)
-  const GATES = 44, GATE_SPACING = 1.0, GATE_DEPTH = GATES * GATE_SPACING;
+  const GATES = 32, GATE_SPACING = 1.15, GATE_DEPTH = GATES * GATE_SPACING;
   // Pass 8a — hex frames of thick boxes (solid StandardMaterial) + thin neon rim
   function hexFrame(r, th, dp) {
     const parts = [];
@@ -78,29 +77,43 @@ export function createVisual(canvas, audio) {
     }
     return mergeGeometries(parts);
   }
-  const gateGeo = hexFrame(0.95, 0.2, 0.5); // 9a thicker stone
-  const gateMat = new THREE.MeshStandardMaterial({ color: 0x1a171e, map: grainTex, roughnessMap: grainTex, roughness: 0.9, metalness: 0.3 });
+  const gateGeo = hexFrame(0.95, 0.3, 0.6); // 9b thick opaque stone
+  const gateMat = new THREE.MeshStandardMaterial({ color: 0x3a3545, map: grainTex, roughnessMap: grainTex, roughness: 0.9, metalness: 0.12 });
   // 9a deep-tunnel neon backlight (behind gates) — bleeds through gaps, rims wet spec
   const backLight = new THREE.SpotLight(0xff1a9c, 120, 60, 0.7, 0.6, 1.2);
   backLight.position.set(0, 0, -40); backLight.target.position.set(0, 0, 3);
   scene.add(backLight); scene.add(backLight.target);
+  const keyDir = new THREE.DirectionalLight(0xfff1e6, 2.2); keyDir.position.set(3, 2.5, 2); scene.add(keyDir); // 9b side key — shaded faces
   const backDir = new THREE.DirectionalLight(0x2a6bff, 1.4); backDir.position.set(0, 0.4, -1); scene.add(backDir);
   const gates = new THREE.InstancedMesh(gateGeo, gateMat, GATES);
   gates.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(gates);
-  const rimGeo = hexFrame(0.84, 0.03, 0.52); // inner edge neon
+  const rimGeo = hexFrame(0.80, 0.014, 0.4); // 9b thin accent // inner edge neon
   const rimMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const rims = new THREE.InstancedMesh(rimGeo, rimMat, GATES);
   rims.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   rims.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(GATES * 3), 3);
   root.add(rims);
   // 8a Reflector floor (half res) + dark rough overlay for depth
-  const floorRef = new Reflector(new THREE.PlaneGeometry(14, 120), {
-    clipBias: 0.003, textureWidth: W, textureHeight: H, color: 0x6a5a80, // 9a full-res, bright tint so neon mirrors
+  const floorRef = new Reflector(new THREE.PlaneGeometry(11, 120), {
+    clipBias: 0.003, textureWidth: W >> 1, textureHeight: H >> 1, color: 0x8a7aa0, // 9b half-res
   });
-  floorRef.rotation.x = -Math.PI / 2; floorRef.position.set(0, -2.25, -55); root.add(floorRef);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 120), new THREE.MeshStandardMaterial({ color: 0x07050c, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false })); // 9a thin wet overlay
-  floor.rotation.x = -Math.PI / 2; floor.position.set(0, -2.2, -55); root.add(floor);
+  floorRef.rotation.x = -Math.PI / 2; floorRef.position.set(0, -1.5, -55); root.add(floorRef);
+  // 9b wet sheen plane (reads even if Reflector misses in composer) + scrolling neon mirror strips
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(11, 120), new THREE.MeshStandardMaterial({ color: 0x0a0812, roughness: 0.1, metalness: 0.9, transparent: true, opacity: 0.35, depthWrite: false }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, -1.48, -55); root.add(floor);
+  const stripCv = document.createElement('canvas'); stripCv.width = 64; stripCv.height = 256;
+  { const sx = stripCv.getContext('2d'); sx.fillStyle = '#000'; sx.fillRect(0, 0, 64, 256);
+    const cols = ['#ff00cc', '#00fff2', '#ff2a8a', '#1a4dff'];
+    for (let i = 0; i < 8; i++) { sx.fillStyle = cols[i % 4]; sx.fillRect(0, i * 32, 64, 6); }
+    const g = sx.createLinearGradient(0, 0, 64, 0); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)');
+    sx.fillStyle = g; sx.fillRect(0, 0, 64, 256); }
+  const stripTex = new THREE.CanvasTexture(stripCv); stripTex.wrapS = stripTex.wrapT = THREE.RepeatWrapping; stripTex.repeat.set(1, 10);
+  const stripMat = new THREE.MeshBasicMaterial({ map: stripTex, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false });
+  const strips = new THREE.Mesh(new THREE.PlaneGeometry(11, 120), stripMat);
+  strips.rotation.x = -Math.PI / 2; strips.position.set(0, -1.46, -55); root.add(strips);
+  const floorL1 = new THREE.PointLight(0xff00cc, 30, 14, 1.5); floorL1.position.set(-2.5, -0.9, -6); scene.add(floorL1);
+  const floorL2 = new THREE.PointLight(0x00fff2, 30, 14, 1.5); floorL2.position.set(2.5, -0.9, -12); scene.add(floorL2);
   const gateZ = new Float32Array(GATES);
   for (let g = 0; g < GATES; g++) gateZ[g] = -g * GATE_SPACING;
   const MAG = new THREE.Color(0xff00cc), CYAN = new THREE.Color(0x00fff2), HOTPINK = new THREE.Color(0xff2a8a), EBLUE = new THREE.Color(0x1a4dff);
@@ -333,9 +346,9 @@ export function createVisual(canvas, audio) {
     const bassTime = audio.bassTime || 0;
 
     speed += ((12 + bass * 34 + kick * 26 + Math.min(6, bassTime * 0.02)) - speed) * 0.45; // 9a harder snap // 7a fly-through // 5b: snappier rhythm
-    scroll += speed * dt;
+    scroll += speed * dt; stripTex.offset.y = (scroll * 0.08) % 1; stripMat.opacity = 0.28 + kick * 0.4;
     const radius = 2.4 + bass * 0.85 + bassAtt * 0.5 + kick * 0.55;
-    const thick = 0.95 + bass * 0.35 + bassHit * 0.28 + kick * 0.2;
+    const thick = 1.25 + bass * 0.35 + bassHit * 0.28 + kick * 0.2;
     const palDrive = mid * 0.55 + midHit * 0.45 + bassHit * 0.25 + kick * 0.2 + bassTime * 0.03;
     const twist = t * 0.08 + bassTime * 0.03;
     const sp = spec();
@@ -355,7 +368,7 @@ export function createVisual(canvas, audio) {
         // inner face pushes in with spectrum/treble → organic relief
         const inward = s * 0.5 + band * 0.9 + Math.sin(t * 1.3 + ringPhase[r] + k) * (0.08 + midAtt * 0.25) + highHit * s * 0.3;
         const inner = Math.max(0.9, radius - inward);
-        const len = 1.35 + inward * 0.55; // shorter radial so end-on reads as hex, not a streak
+        const len = 1.6 + inward * 0.55; // shorter radial so end-on reads as hex, not a streak
         const ca = Math.cos(a), sa = Math.sin(a);
         pos.set(ca * inner, sa * inner, z);
         q.setFromAxisAngle(zAxis, a - Math.PI / 2); // local +Y points outward
@@ -364,7 +377,7 @@ export function createVisual(canvas, audio) {
         pillars.setMatrixAt(idx, m4);
 
         cosPalette(s * 0.35 + depthT * 0.6 + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, col);
-        col.multiplyScalar(0.12 + kick * 0.12 + bassHit * 0.1 + band * 0.18); // 6a: dim — gates are hero
+        col.lerp(gateMat.color, 0.75).multiplyScalar(1.4 + kick * 0.4 + band * 0.2); // 9b grey concrete, faint tint // 6a: dim — gates are hero
         pillars.setColorAt(idx, col);
 
         // cap on inner face, facing the axis
@@ -374,13 +387,13 @@ export function createVisual(canvas, audio) {
         m4.compose(pos, qTmp, scl);
         caps.setMatrixAt(idx, m4);
         const glow = 0.2 + band * 0.85 + midHit * 0.55 + kick * 0.4 + (s > 0.85 ? highHit * 0.9 : 0);
-        capCol.copy(col).multiplyScalar(glow * 1.6);
+        capCol.copy(col).multiplyScalar(glow * 0.6);
         caps.setColorAt(idx, capCol);
       }
     }
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     caps.instanceMatrix.needsUpdate = true; caps.instanceColor.needsUpdate = true;
-    capMat.opacity = 0.45 + kick * 0.5 + midHit * 0.2;
+    capMat.opacity = 0.04 + kick * 0.08; // 9b ≤0.12
     // Pass 6a portal gates — magenta↔cyan alternate, twist per depth, kick lurch
     gateLurch *= 0.85;
     for (let g = 0; g < GATES; g++) {
@@ -399,7 +412,7 @@ export function createVisual(canvas, audio) {
       gateCol.copy(NEONS[g % 4]);
       // 6e: near-camera gates dimmer so idle centre stays ≤120
       const near = Math.max(0, 1 - depthT);
-      gateCol.multiplyScalar(1.3 + kick * 2.2 + near * 0.3); // 9a hotter on kick // 7a hot MAG/CYAN
+      gateCol.multiplyScalar(0.5 + kick * 1.6 + near * 0.1); // 9b rims = accent // 7a hot MAG/CYAN
       rims.setColorAt(g, gateCol);
     }
     gates.instanceMatrix.needsUpdate = true;
@@ -453,6 +466,7 @@ export function createVisual(canvas, audio) {
     camera.position.y += (Math.random() * 2 - 1) * shakeA;
     camera.position.z = 3 - zPunch;
     camera.lookAt((Math.random() * 2 - 1) * shakeA * 2, (Math.random() * 2 - 1) * shakeA * 2, -40 + zPunch * 6); // lookAt snap
+    camera.rotateX(-0.18); // 9b look-down so wet floor is in frame
     camera.rotation.z += Math.sin(t * 0.15) * 0.35 + bassTime * 0.04;
     camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0); camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.14 + popS; root.scale.set(ks, ks, 1);
@@ -471,7 +485,7 @@ export function createVisual(canvas, audio) {
     kaleidoOff += dt * (0.12 + mid * 0.35 + bassTime * 0.02) + peak * 0.12;
     kaleido.uniforms.segments.value = Math.max(4, Math.min(10, kaleidoN));
     kaleido.uniforms.offset.value = kaleidoOff;
-    kaleido.uniforms.mixAmt.value = 0.22 + midAtt * 0.08; // light edge only
+    kaleido.uniforms.mixAmt.value = flashLeft > 0 ? 0.2 : 0.04 + midAtt * 0.03; // 9b no ribbon shred // light edge only
 
     // Kick flash / snatch — 1–3f, ≤3/s, from kick + bassAtt (not continuous bass)
     // 6e: fewer false opens that spiked idle ~185
@@ -507,7 +521,7 @@ export function createVisual(canvas, audio) {
       glitchLeft = Math.max(glitchLeft, 10);
       afterCool = Math.max(afterCool, 18);
     }
-    let dampBase = 0.24 + Math.min(0.05, bass * 0.03);
+    let dampBase = 0.1 + Math.min(0.03, bass * 0.02); // 9b sharper
     if (dampBase_force) dampBase = dampBase_force;
     if (peak > 0.5) dampBase = Math.min(dampBase, 0.08);
     if (afterCool > 0) { dampBase = Math.min(dampBase, 0.04); afterCool--; }
