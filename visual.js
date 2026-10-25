@@ -59,8 +59,8 @@ export function createVisual(canvas, audio) {
   root.add(caps);
 
   // Pass 6a — nested neon portal gates (hex frames → vanishing point)
-  const GATES = 24, GATE_SPACING = 2.6, GATE_DEPTH = GATES * GATE_SPACING;
-  const gateGeo = new THREE.RingGeometry(0.82, 1.05, 6);
+  const GATES = 32, GATE_SPACING = 1.25, GATE_DEPTH = GATES * GATE_SPACING;
+  const gateGeo = new THREE.RingGeometry(0.86, 1.0, 6);
   gateGeo.rotateZ(Math.PI / 6);
   const gateMat = new THREE.MeshBasicMaterial({
     color: 0xffffff, transparent: true, opacity: 0.95,
@@ -70,6 +70,9 @@ export function createVisual(canvas, audio) {
   gates.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   gates.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(GATES * 3), 3);
   root.add(gates);
+  // 7a dark ground strip
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(3, 120), new THREE.MeshBasicMaterial({ color: 0x0a0612, transparent: true, opacity: 0.6, depthWrite: false }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, -2.2, -55); root.add(floor);
   const gateZ = new Float32Array(GATES);
   for (let g = 0; g < GATES; g++) gateZ[g] = -g * GATE_SPACING;
   const MAG = new THREE.Color(0xff00cc), CYAN = new THREE.Color(0x00fff2);
@@ -293,7 +296,7 @@ export function createVisual(canvas, audio) {
     const bassHit = audio.bassHit || 0, midHit = audio.midHit || 0, highHit = audio.highHit || 0;
     const bassTime = audio.bassTime || 0;
 
-    speed += ((8 + bass * 28 + kick * 22) - speed) * 0.18; // 5b: snappier rhythm
+    speed += ((12 + bass * 34 + kick * 26 + Math.min(6, bassTime * 0.02)) - speed) * 0.2; // 7a fly-through // 5b: snappier rhythm
     scroll += speed * dt;
     const radius = 2.4 + bass * 0.85 + bassAtt * 0.5 + kick * 0.55;
     const thick = 0.95 + bass * 0.35 + bassHit * 0.28 + kick * 0.2;
@@ -325,7 +328,7 @@ export function createVisual(canvas, audio) {
         pillars.setMatrixAt(idx, m4);
 
         cosPalette(s * 0.35 + depthT * 0.6 + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, col);
-        col.multiplyScalar(0.22 + kick * 0.2 + bassHit * 0.15 + band * 0.3); // 6a: dim — gates are hero
+        col.multiplyScalar(0.12 + kick * 0.12 + bassHit * 0.1 + band * 0.18); // 6a: dim — gates are hero
         pillars.setColorAt(idx, col);
 
         // cap on inner face, facing the axis
@@ -345,12 +348,12 @@ export function createVisual(canvas, audio) {
     // Pass 6a portal gates — magenta↔cyan alternate, twist per depth, kick lurch
     gateLurch *= 0.85;
     for (let g = 0; g < GATES; g++) {
-      gateZ[g] += speed * dt * 1.15 + gateLurch;
+      gateZ[g] += speed * dt * 1.6 + gateLurch;
       if (gateZ[g] > 5) gateZ[g] -= GATE_DEPTH;
       const z = gateZ[g];
       const depthT = (-z + 5) / GATE_DEPTH;
-      const rad = 1.15 + depthT * 2.8 + bass * 0.35 + bassAtt * 0.25;
-      const twist = depthT * 1.2 + t * 0.2 + bassTime * 0.05;
+      const rad = 1.6 + depthT * 3.6 + bass * 0.45 + bassAtt * 0.3; // 7a: near rings fill frame
+      const twist = g * 0.11 + depthT * 1.6 + t * 0.35 + bassTime * 0.18; // 7a per-ring twist + spiral
       pos.set(0, 0, z);
       q.setFromAxisAngle(zAxis, twist);
       scl.set(rad, rad, 1);
@@ -359,7 +362,7 @@ export function createVisual(canvas, audio) {
       gateCol.copy(g % 2 === 0 ? MAG : CYAN);
       // 6e: near-camera gates dimmer so idle centre stays ≤120
       const near = Math.max(0, 1 - depthT);
-      gateCol.multiplyScalar(0.45 + kick * 0.45 + near * 0.18);
+      gateCol.multiplyScalar(1.1 + kick * 1.2 + near * 0.3); // 7a hot MAG/CYAN
       gates.setColorAt(g, gateCol);
     }
     gates.instanceMatrix.needsUpdate = true;
@@ -404,12 +407,12 @@ export function createVisual(canvas, audio) {
     shell.rotation.y = -t * 0.55;
 
     // organic corkscrew camera
-    const drift = 0.25 + mid * 0.5;
-    camera.position.x = Math.sin(t * 0.37 + bassTime * 0.05) * drift;
-    camera.position.y = Math.cos(t * 0.29) * drift * 0.8;
+    const drift = 0.45 + mid * 0.6 + bass * 0.3; // 7a committed corkscrew
+    camera.position.x = Math.sin(t * 0.6 + bassTime * 0.12) * drift;
+    camera.position.y = Math.cos(t * 0.6 + bassTime * 0.12) * drift * 0.8;
     camera.rotation.z = Math.sin(t * 0.15) * 0.35 + bassTime * 0.01 + mid * 0.08;
-    camera.lookAt(0, 0, -20);
-    camera.rotation.z += Math.sin(t * 0.15) * 0.35;
+    camera.lookAt(0, 0, -40); // 7a deeper vanishing point
+    camera.rotation.z += Math.sin(t * 0.15) * 0.35 + bassTime * 0.04;
     camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0); camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.14; root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
@@ -435,7 +438,7 @@ export function createVisual(canvas, audio) {
       lastFlashT = t;
       flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
       flashMode = peak > 0.75 ? 1 : (kick > 0.6 ? (Math.random() > 0.5 ? 2 : 3) : 4);
-      gateLurch = SPACING * 0.55; // gate lurch one step
+      gateLurch = GATE_SPACING * 1.0; // gate lurch one step
       afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
     }
@@ -464,7 +467,7 @@ export function createVisual(canvas, audio) {
     // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.22, kick * 0.15 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
+    bloom.strength = (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.32) + Math.min(0.45, kick * 0.35 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.36 : 0.40;
