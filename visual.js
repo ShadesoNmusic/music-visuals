@@ -4,8 +4,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// Pass 7b: beat violence (scale-pop/shake/bloom/Z) + dense gates; void clamp kept
+// Pass 8a: solid InstancedMesh box gates + neon edge rims + Reflector floor; 7b violence (scale-pop/shake/bloom/Z) + dense gates; void clamp kept
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -33,7 +35,7 @@ export function createVisual(canvas, audio) {
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
   const camLight = new THREE.PointLight(0xffffff, 40, 30, 1.6);
   scene.add(camLight);
 
@@ -59,18 +61,34 @@ export function createVisual(canvas, audio) {
 
   // Pass 6a — nested neon portal gates (hex frames → vanishing point)
   const GATES = 32, GATE_SPACING = 1.25, GATE_DEPTH = GATES * GATE_SPACING;
-  const gateGeo = new THREE.RingGeometry(0.86, 1.0, 6);
-  gateGeo.rotateZ(Math.PI / 6);
-  const gateMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.95,
-    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-  });
+  // Pass 8a — hex frames of thick boxes (solid StandardMaterial) + thin neon rim
+  function hexFrame(r, th, dp) {
+    const parts = [];
+    const side = 2 * r * Math.tan(Math.PI / 6);
+    for (let k = 0; k < 6; k++) {
+      const a = k * Math.PI / 3;
+      const b = new THREE.BoxGeometry(side + th * 0.6, th, dp);
+      b.translate(0, r, 0); b.rotateZ(a); parts.push(b);
+    }
+    return mergeGeometries(parts);
+  }
+  const gateGeo = hexFrame(0.93, 0.14, 0.35);
+  const gateMat = new THREE.MeshStandardMaterial({ color: 0x2a2433, roughness: 0.7, metalness: 0.15 });
   const gates = new THREE.InstancedMesh(gateGeo, gateMat, GATES);
   gates.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  gates.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(GATES * 3), 3);
   root.add(gates);
-  // 7a dark ground strip
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(3, 120), new THREE.MeshBasicMaterial({ color: 0x0a0612, transparent: true, opacity: 0.6, depthWrite: false }));
+  const rimGeo = hexFrame(0.86, 0.025, 0.37); // inner edge neon
+  const rimMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const rims = new THREE.InstancedMesh(rimGeo, rimMat, GATES);
+  rims.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  rims.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(GATES * 3), 3);
+  root.add(rims);
+  // 8a Reflector floor (half res) + dark rough overlay for depth
+  const floorRef = new Reflector(new THREE.PlaneGeometry(14, 120), {
+    clipBias: 0.003, textureWidth: Math.max(256, W >> 1), textureHeight: Math.max(256, H >> 1), color: 0x161020,
+  });
+  floorRef.rotation.x = -Math.PI / 2; floorRef.position.set(0, -2.25, -55); root.add(floorRef);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 120), new THREE.MeshStandardMaterial({ color: 0x07050c, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, -2.2, -55); root.add(floor);
   const gateZ = new Float32Array(GATES);
   for (let g = 0; g < GATES; g++) gateZ[g] = -g * GATE_SPACING;
@@ -361,14 +379,15 @@ export function createVisual(canvas, audio) {
       scl.set(rad, rad, 1);
       m4.compose(pos, q, scl);
       gates.setMatrixAt(g, m4);
+      rims.setMatrixAt(g, m4);
       gateCol.copy(g % 2 === 0 ? MAG : CYAN);
       // 6e: near-camera gates dimmer so idle centre stays ≤120
       const near = Math.max(0, 1 - depthT);
       gateCol.multiplyScalar(1.1 + kick * 1.2 + near * 0.3); // 7a hot MAG/CYAN
-      gates.setColorAt(g, gateCol);
+      rims.setColorAt(g, gateCol);
     }
     gates.instanceMatrix.needsUpdate = true;
-    gates.instanceColor.needsUpdate = true;
+    rims.instanceMatrix.needsUpdate = true; rims.instanceColor.needsUpdate = true;
 
 
 
@@ -422,7 +441,7 @@ export function createVisual(canvas, audio) {
     camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0); camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.14 + popS; root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
-    camLight.intensity = 18 + bass * 35 + kick * 25;
+    camLight.intensity = 26 + bass * 35 + kick * 25;
     // glob tracks camera lightly — stays in centre-third for hook overlay
     glob.position.x = camera.position.x * 0.35;
     glob.position.y = camera.position.y * 0.35;
