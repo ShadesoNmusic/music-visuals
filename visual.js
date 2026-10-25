@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Pass 5b2: peakHold snatch + hard kaleido + kick-kill afterimage; no hook chrome
+// Pass 6a: portal gate frames + kick flash/snatch (owner portal + Shorts punch bar)
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -57,7 +57,25 @@ export function createVisual(canvas, audio) {
   caps.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(caps);
 
-  const ringZ = new Float32Array(RINGS);
+  // Pass 6a — nested neon portal gates (hex frames → vanishing point)
+  const GATES = 24, GATE_SPACING = 2.6, GATE_DEPTH = GATES * GATE_SPACING;
+  const gateGeo = new THREE.RingGeometry(0.82, 1.05, 6);
+  gateGeo.rotateZ(Math.PI / 6);
+  const gateMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const gates = new THREE.InstancedMesh(gateGeo, gateMat, GATES);
+  gates.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  gates.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(GATES * 3), 3);
+  root.add(gates);
+  const gateZ = new Float32Array(GATES);
+  for (let g = 0; g < GATES; g++) gateZ[g] = -g * GATE_SPACING;
+  const MAG = new THREE.Color(0xff00cc), CYAN = new THREE.Color(0x00fff2);
+  const gateCol = new THREE.Color();
+  let gateLurch = 0;
+
+    const ringZ = new Float32Array(RINGS);
   const ringPhase = new Float32Array(RINGS);
   const seed = new Float32Array(COUNT);
   for (let r = 0; r < RINGS; r++) { ringZ[r] = -r * SPACING; ringPhase[r] = Math.random() * 6.28; }
@@ -152,7 +170,44 @@ export function createVisual(canvas, audio) {
   composer.addPass(kaleido);
   let kaleidoN = 6, kaleidoOff = 0;
 
-    // Pass 4c — edge-biased RGB/block tear; centre-third (hook/void) stays clean
+  // Pass 6a — kick flash / invert / colour-snatch (1–3f, rate-limited ≤3/s)
+  const KickFlash = {
+    uniforms: {
+      tDiffuse: { value: null },
+      mode: { value: 0 }, // 0 off, 1 invert, 2 magenta, 3 cyan, 4 rgb-split
+      amt: { value: 0 },
+    },
+    vertexShader: /* glsl */`
+      varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: /* glsl */`
+      uniform sampler2D tDiffuse;
+      uniform float mode;
+      uniform float amt;
+      varying vec2 vUv;
+      void main(){
+        vec4 c = texture2D(tDiffuse, vUv);
+        if (amt < 0.001 || mode < 0.5) { gl_FragColor = c; return; }
+        if (mode < 1.5) {
+          gl_FragColor = vec4(mix(c.rgb, 1.0 - c.rgb, amt), 1.0);
+        } else if (mode < 2.5) {
+          gl_FragColor = vec4(mix(c.rgb, vec3(1.0, 0.0, 0.8), amt), 1.0);
+        } else if (mode < 3.5) {
+          gl_FragColor = vec4(mix(c.rgb, vec3(0.0, 1.0, 0.95), amt), 1.0);
+        } else {
+          float s = 0.012 * amt;
+          float r = texture2D(tDiffuse, vUv + vec2(s, 0.0)).r;
+          float g = c.g;
+          float b = texture2D(tDiffuse, vUv - vec2(s, 0.0)).b;
+          gl_FragColor = vec4(r, g, b, 1.0);
+        }
+      }`,
+  };
+  const kickFlash = new ShaderPass(KickFlash);
+  composer.addPass(kickFlash);
+  let flashLeft = 0, flashMode = 0, lastFlashT = -1, dampBase_force = 0;
+
+      // Pass 4c — edge-biased RGB/block tear; centre-third (hook/void) stays clean
   const EdgeGlitch = {
     uniforms: {
       tDiffuse: { value: null },
@@ -247,7 +302,7 @@ export function createVisual(canvas, audio) {
         pillars.setMatrixAt(idx, m4);
 
         cosPalette(s * 0.35 + depthT * 0.6 + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, col);
-        col.multiplyScalar(0.38 + kick * 0.25 + bassHit * 0.2 + band * 0.35); // break uniform wash
+        col.multiplyScalar(0.22 + kick * 0.2 + bassHit * 0.15 + band * 0.3); // 6a: dim — gates are hero
         pillars.setColorAt(idx, col);
 
         // cap on inner face, facing the axis
@@ -264,6 +319,28 @@ export function createVisual(canvas, audio) {
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     caps.instanceMatrix.needsUpdate = true; caps.instanceColor.needsUpdate = true;
     capMat.opacity = 0.45 + kick * 0.5 + midHit * 0.2;
+    // Pass 6a portal gates — magenta↔cyan alternate, twist per depth, kick lurch
+    gateLurch *= 0.85;
+    for (let g = 0; g < GATES; g++) {
+      gateZ[g] += speed * dt * 1.15 + gateLurch;
+      if (gateZ[g] > 5) gateZ[g] -= GATE_DEPTH;
+      const z = gateZ[g];
+      const depthT = (-z + 5) / GATE_DEPTH;
+      const rad = 1.15 + depthT * 2.8 + bass * 0.35 + bassAtt * 0.25;
+      const twist = depthT * 1.2 + t * 0.2 + bassTime * 0.05;
+      pos.set(0, 0, z);
+      q.setFromAxisAngle(zAxis, twist);
+      scl.set(rad, rad, 1);
+      m4.compose(pos, q, scl);
+      gates.setMatrixAt(g, m4);
+      gateCol.copy(g % 2 === 0 ? MAG : CYAN);
+      gateCol.multiplyScalar(0.55 + kick * 0.45 + (1 - depthT) * 0.35);
+      gates.setColorAt(g, gateCol);
+    }
+    gates.instanceMatrix.needsUpdate = true;
+    gates.instanceColor.needsUpdate = true;
+
+
 
     for (let i = 0; i < STAR_N; i++) {
       starPos[i * 3 + 2] += speed * dt * 1.3;
@@ -308,7 +385,7 @@ export function createVisual(canvas, audio) {
     camera.rotation.z = Math.sin(t * 0.15) * 0.35 + bassTime * 0.01 + mid * 0.08;
     camera.lookAt(0, 0, -20);
     camera.rotation.z += Math.sin(t * 0.15) * 0.35;
-    camera.fov = 72 - kick * 16; camera.updateProjectionMatrix();
+    camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0); camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.14; root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
     camLight.intensity = 28 + bass * 35 + kick * 25;
@@ -317,26 +394,48 @@ export function createVisual(canvas, audio) {
     glob.position.y = camera.position.y * 0.35;
     glob.position.z = -5 + Math.sin(t * 0.5) * 0.15;
 
-    // frame-rate independent trails: pow so large dt (low fps) shortens persistence
-            // 5b2 Kaleido — peakHold = hard hit snatch; mid rotate; bassTime drift
+    // frame-rate independent trails: pow so large dt (low fps) shortens pers    // 6a: kaleido demoted to light edge accent
     const peak = audio.peakHold || kick;
-    const targetN = 6 + Math.round(mid * 3) + (peak > 0.55 ? 4 : 0) + (bassHit > 0.5 ? 1 : 0);
-    kaleidoN += (targetN - kaleidoN) * (peak > 0.55 ? 0.55 : 0.22);
-    kaleidoOff += dt * (0.25 + mid * 0.9 + midHit * 0.5 + bassTime * 0.04) + peak * 0.35;
-    kaleido.uniforms.segments.value = Math.max(4, Math.min(12, kaleidoN));
+    const targetN = 6 + Math.round(mid * 2) + (peak > 0.55 ? 2 : 0);
+    kaleidoN += (targetN - kaleidoN) * 0.2;
+    kaleidoOff += dt * (0.12 + mid * 0.35 + bassTime * 0.02) + peak * 0.12;
+    kaleido.uniforms.segments.value = Math.max(4, Math.min(10, kaleidoN));
     kaleido.uniforms.offset.value = kaleidoOff;
-    kaleido.uniforms.mixAmt.value = 0.72 + midAtt * 0.2 + peak * 0.2;
+    kaleido.uniforms.mixAmt.value = 0.22 + midAtt * 0.08; // light edge only
+
+    // Kick flash / snatch — 1–3f, ≤3/s, from kick + bassAtt (not continuous bass)
+    const wantFlash = (kick > 0.55 || (bassAtt > 0.7 && peak > 0.5) || bassHit > 0.75);
+    if (wantFlash && (t - lastFlashT) > 0.34) {
+      lastFlashT = t;
+      flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
+      flashMode = peak > 0.75 ? 1 : (kick > 0.6 ? (Math.random() > 0.5 ? 2 : 3) : 4);
+      gateLurch = SPACING * 0.55; // gate lurch one step
+      afterCool = Math.max(afterCool, 20);
+      glitchLeft = Math.max(glitchLeft, 8);
+    }
+    if (flashLeft > 0) {
+      kickFlash.uniforms.mode.value = flashMode;
+      kickFlash.uniforms.amt.value = 0.85 + kick * 0.15;
+      flashLeft--;
+      dampBase_force = 0.05;
+    } else {
+      kickFlash.uniforms.mode.value = 0;
+      kickFlash.uniforms.amt.value = 0;
+      dampBase_force = 0;
+    }
 
     // kill Afterimage on kick/peak so hits stay sharp in stills
     if (kick > 0.4 || peak > 0.6 || highHit > 0.35 || bassHit > 0.55) {
       glitchLeft = Math.max(glitchLeft, 10);
       afterCool = Math.max(afterCool, 18);
     }
-    let dampBase = 0.38 + Math.min(0.05, bass * 0.03);
+    let dampBase = 0.32 + Math.min(0.05, bass * 0.03);
+    if (dampBase_force) dampBase = dampBase_force;
     if (peak > 0.5) dampBase = Math.min(dampBase, 0.08);
     if (afterCool > 0) { dampBase = Math.min(dampBase, 0.12); afterCool--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = 0.22 + Math.min(0.18, bass * 0.1 + kick * 0.12 + bassAtt * 0.06);
+    bloom.strength = 0.22 + Math.min(0.22, bass * 0.1 + kick * 0.15 + bassAtt * 0.08);
+    renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : 0.95;
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
