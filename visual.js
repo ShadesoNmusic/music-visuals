@@ -254,6 +254,29 @@ export function createVisual(canvas, audio) {
   const glitch = new ShaderPass(EdgeGlitch);
   composer.addPass(glitch);
   let glitchLeft = 0, afterCool = 0;
+  // 6b: radial void gate + centre luma clamp (LAST pass) — caps pocket ≤120/255 outside snatch
+  const VoidGate = {
+    uniforms: { tDiffuse: { value: null }, cap: { value: 0.45 }, radius: { value: 0.32 }, aspect: { value: W / H }, open: { value: 0 } },
+    vertexShader: /* glsl */`
+      varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: /* glsl */`
+      uniform sampler2D tDiffuse; uniform float cap; uniform float radius; uniform float aspect; uniform float open;
+      varying vec2 vUv;
+      void main(){
+        vec4 c = texture2D(tDiffuse, vUv);
+        vec2 d = vUv - 0.5; d.x *= aspect;
+        float g = 1.0 - smoothstep(radius * 0.6, radius, length(d)); // 1 in centre pocket
+        g *= (1.0 - open);
+        float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+        float k = l > cap ? cap / l : 1.0;
+        c.rgb *= mix(1.0, k * 0.92, g); // clamp + slight darken in pocket
+        gl_FragColor = vec4(c.rgb, 1.0);
+      }`,
+  };
+  const voidGate = new ShaderPass(VoidGate);
+  composer.addPass(voidGate);
+  let flashEnv = 0;
 
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
   const zAxis = new THREE.Vector3(0, 0, 1), xAxis = new THREE.Vector3(1, 0, 0);
@@ -416,12 +439,16 @@ export function createVisual(canvas, audio) {
     }
     if (flashLeft > 0) {
       kickFlash.uniforms.mode.value = flashMode;
-      kickFlash.uniforms.amt.value = 0.85 + kick * 0.15;
+      flashEnv = 0.85 + kick * 0.15;
+      kickFlash.uniforms.amt.value = flashEnv;
       flashLeft--;
       dampBase_force = 0.05;
     } else {
-      kickFlash.uniforms.mode.value = 0;
-      kickFlash.uniforms.amt.value = 0;
+      // 6b: env decays ×0.82/frame to hard 0 (no lingering wash)
+      flashEnv *= Math.pow(0.82, Math.max(1, dt * 60));
+      if (flashEnv < 0.04) flashEnv = 0;
+      kickFlash.uniforms.mode.value = flashEnv > 0 ? flashMode : 0;
+      kickFlash.uniforms.amt.value = flashMode === 1 ? 0 : flashEnv * 0.5; // invert never lingers
       dampBase_force = 0;
     }
 
@@ -435,7 +462,9 @@ export function createVisual(canvas, audio) {
     if (peak > 0.5) dampBase = Math.min(dampBase, 0.08);
     if (afterCool > 0) { dampBase = Math.min(dampBase, 0.04); afterCool--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = (afterCool > 0 && flashLeft <= 0 ? 0.1 : 0.16) + Math.min(0.22, bass * 0.1 + kick * 0.15 + bassAtt * 0.08);
+    bloom.strength = (afterCool > 0 && flashLeft <= 0 ? 0.08 : 0.12) + Math.min(0.22, kick * 0.15 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
+    voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
+    scene.background.setHex(flashLeft > 0 || flashEnv > 0 ? BG : 0x000000); // blackout between hits
     renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : (afterCool > 0 ? 0.72 : 0.82);
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
