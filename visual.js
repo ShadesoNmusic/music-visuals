@@ -4,9 +4,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 
-// Pass 2: Synesthesia-inspired hex-pillar tunnel (InstancedMesh, recycled along Z)
+// Pass 2d: chunky hex-pillar tunnel (InstancedMesh) — readable hex flats, not thin rings
 const W = 540, H = 960;
-const RINGS = 40, PER_RING = 18, SPACING = 1.9;
+const RINGS = 36, PER_RING = 12, SPACING = 2.2; // fewer, chunkier hexes so they read as pillars not rings
 const COUNT = RINGS * PER_RING;
 const DEPTH = RINGS * SPACING;
 const BG = 0x020205;
@@ -39,7 +39,7 @@ export function createVisual(canvas, audio) {
   // Hex pillar: 6-sided prism along Y, base at y=0 so it grows outward from the inner face
   const geo = new THREE.CylinderGeometry(1, 1, 1, 6, 1);
   geo.translate(0, 0.5, 0);
-  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x000000, flatShading: true });
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x111122, flatShading: true });
   const pillars = new THREE.InstancedMesh(geo, mat, COUNT);
   pillars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(pillars);
@@ -103,7 +103,7 @@ export function createVisual(canvas, audio) {
     speed += ((7 + bass * 22 + kick * 14) - speed) * 0.1;
     scroll += speed * dt;
     const radius = 2.4 + bass * 0.5 + bassAtt * 0.35 + kick * 0.25;
-    const thick = 0.26 + bass * 0.08 + bassHit * 0.06;
+    const thick = 0.55 + bass * 0.18 + bassHit * 0.12; // chunky hex cross-section
     const palDrive = mid * 0.4 + midHit * 0.25 + bassTime * 0.02;
     const twist = t * 0.08 + bassTime * 0.03;
     const sp = spec();
@@ -123,7 +123,7 @@ export function createVisual(canvas, audio) {
         // inner face pushes in with spectrum/treble → organic relief
         const inward = s * 0.5 + band * 0.9 + Math.sin(t * 1.3 + ringPhase[r] + k) * (0.08 + midAtt * 0.25) + highHit * s * 0.3;
         const inner = Math.max(0.9, radius - inward);
-        const len = 3 + inward;
+        const len = 2.2 + inward * 0.85;
         const ca = Math.cos(a), sa = Math.sin(a);
         pos.set(ca * inner, sa * inner, z);
         q.setFromAxisAngle(zAxis, a - Math.PI / 2); // local +Y points outward
@@ -138,7 +138,7 @@ export function createVisual(canvas, audio) {
         // cap on inner face, facing the axis
         pos.set(ca * (inner - 0.01), sa * (inner - 0.01), z);
         qTmp.copy(q).multiply(qCap);
-        scl.set(thick * 0.92, thick * 0.92, 1);
+        scl.set(thick * 1.15, thick * 1.15, 1); // oversized hex caps — readable flats
         m4.compose(pos, qTmp, scl);
         caps.setMatrixAt(idx, m4);
         const glow = 0.25 + band * 0.6 + (s > 0.85 ? midHit * 0.8 : 0);
@@ -148,7 +148,7 @@ export function createVisual(canvas, audio) {
     }
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     caps.instanceMatrix.needsUpdate = true; caps.instanceColor.needsUpdate = true;
-    capMat.opacity = 0.3 + kick * 0.25;
+    capMat.opacity = 0.55 + kick * 0.3;
 
     for (let i = 0; i < STAR_N; i++) {
       starPos[i * 3 + 2] += speed * dt * 1.3;
