@@ -3,9 +3,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
-import { GlitchPass } from 'three/addons/postprocessing/GlitchPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Pass 4b: longer/stronger hit Glitch (readable in TikTok stills) + 3a Glob + 2f hex
+// Pass 4c: edge-biased hit Glitch (protect centre-third void) + 3a Glob + 2f hex
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -107,37 +107,50 @@ export function createVisual(canvas, audio) {
   composer.addPass(after);
   const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.42, 0.3, 0.65);
   composer.addPass(bloom);
-  // Pass 4b — DigitalGlitch on hits; custom burst so tear reads in stills
-  const glitch = new GlitchPass(32);
-  glitch.goWild = false;
+  // Pass 4c — edge-biased RGB/block tear; centre-third (hook/void) stays clean
+  const EdgeGlitch = {
+    uniforms: {
+      tDiffuse: { value: null },
+      amount: { value: 0 },
+      angle: { value: 0 },
+      seed: { value: 0 },
+      colShift: { value: 0 },
+    },
+    vertexShader: /* glsl */`
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      uniform sampler2D tDiffuse;
+      uniform float amount;
+      uniform float angle;
+      uniform float seed;
+      uniform float colShift;
+      varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() {
+        // 0 in centre-third, 1 toward top/bottom — protects hook + void pocket
+        float edge = smoothstep(0.10, 0.28, abs(vUv.y - 0.5));
+        float amp = amount * edge;
+        if (amp < 0.001) {
+          gl_FragColor = texture2D(tDiffuse, vUv);
+          return;
+        }
+        float band = step(0.92, hash(vec2(floor(vUv.y * 28.0), seed)));
+        vec2 dir = vec2(cos(angle), sin(angle));
+        vec2 off = dir * amp * (0.35 + band * 1.8);
+        float cs = colShift * amp * 2.2;
+        float r = texture2D(tDiffuse, vUv + off + vec2(cs, 0.0)).r;
+        float g = texture2D(tDiffuse, vUv + off).g;
+        float b = texture2D(tDiffuse, vUv + off - vec2(cs, 0.0)).b;
+        gl_FragColor = vec4(r, g, b, 1.0);
+      }`,
+  };
+  const glitch = new ShaderPass(EdgeGlitch);
   composer.addPass(glitch);
   let glitchLeft = 0;
-  const _glitchRender = glitch.render.bind(glitch);
-  glitch.render = (renderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
-    if (glitchLeft > 0) {
-      const u = glitch.uniforms;
-      u.tDiffuse.value = readBuffer.texture;
-      u.byp.value = 0;
-      u.amount.value = 0.14 + Math.random() * 0.1;
-      u.angle.value = (Math.random() * 2 - 1) * Math.PI;
-      u.seed.value = Math.random();
-      u.seed_x.value = (Math.random() * 2 - 1) * 0.7;
-      u.seed_y.value = (Math.random() * 2 - 1) * 0.7;
-      u.distortion_x.value = Math.random();
-      u.distortion_y.value = Math.random();
-      if (glitch.renderToScreen) {
-        renderer.setRenderTarget(null);
-        glitch.fsQuad.render(renderer);
-      } else {
-        renderer.setRenderTarget(writeBuffer);
-        if (glitch.clear) renderer.clear();
-        glitch.fsQuad.render(renderer);
-      }
-    } else {
-      glitch.uniforms.byp.value = 1;
-      _glitchRender(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
-    }
-  };
 
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
   const zAxis = new THREE.Vector3(0, 0, 1), xAxis = new THREE.Vector3(1, 0, 0);
@@ -261,9 +274,17 @@ export function createVisual(canvas, audio) {
     const dampBase = 0.60 + Math.min(0.05, bass * 0.03);
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
-    // 4b: ~10-frame bursts; strong amount applied inside glitch.render override
-    if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) glitchLeft = Math.max(glitchLeft, 10);
-    if (glitchLeft > 0) glitchLeft--;
+    // 4c: ~8-frame edge-only bursts — readable tear, void centre stays dark
+    if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) glitchLeft = Math.max(glitchLeft, 8);
+    if (glitchLeft > 0) {
+      glitch.uniforms.amount.value = 0.045 + kick * 0.04 + highHit * 0.035;
+      glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
+      glitch.uniforms.seed.value = Math.random() * 10;
+      glitch.uniforms.colShift.value = 0.012 + highHit * 0.01;
+      glitchLeft--;
+    } else {
+      glitch.uniforms.amount.value = 0;
+    }
     composer.render();
   }
   return { frame, renderer };
