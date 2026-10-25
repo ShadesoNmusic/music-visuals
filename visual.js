@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Pass 4d: edge glitch + kill Afterimage during burst (stop void smear) + 3a + 2f
+// Pass 5a: Kaleido (polar wedges, centre identity) + Pass 4d edge glitch + 3a Glob + 2f hex
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -107,7 +107,52 @@ export function createVisual(canvas, audio) {
   composer.addPass(after);
   const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.42, 0.3, 0.65);
   composer.addPass(bloom);
-  // Pass 4c — edge-biased RGB/block tear; centre-third (hook/void) stays clean
+  // Pass 5a — polar kaleido; soft radius keeps centre-third identity for hook/void
+  const KaleidoShader = {
+    uniforms: {
+      tDiffuse: { value: null },
+      segments: { value: 6 },
+      offset: { value: 0 },
+      mixAmt: { value: 0.85 },
+    },
+    vertexShader: /* glsl */`
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      uniform sampler2D tDiffuse;
+      uniform float segments;
+      uniform float offset;
+      uniform float mixAmt;
+      varying vec2 vUv;
+      const float PI = 3.14159265;
+      void main() {
+        vec2 p = vUv - 0.5;
+        // compensate 9:16 aspect so wedges are round, not oval
+        p.x *= 540.0 / 960.0;
+        float r = length(p);
+        float a = atan(p.y, p.x) + offset;
+        float seg = max(segments, 2.0);
+        float tau = PI * 2.0 / seg;
+        a = mod(a, tau);
+        a = abs(a - tau * 0.5);
+        vec2 q = vec2(cos(a), sin(a)) * r;
+        q.x /= 540.0 / 960.0;
+        vec2 uvK = q + 0.5;
+        // soft radius: identity in centre (hook/void), full kaleido outside
+        float k = smoothstep(0.12, 0.32, r);
+        vec3 base = texture2D(tDiffuse, vUv).rgb;
+        vec3 kal = texture2D(tDiffuse, clamp(uvK, 0.0, 1.0)).rgb;
+        gl_FragColor = vec4(mix(base, kal, k * mixAmt), 1.0);
+      }`,
+  };
+  const kaleido = new ShaderPass(KaleidoShader);
+  composer.addPass(kaleido);
+  let kaleidoN = 6, kaleidoOff = 0;
+
+    // Pass 4c — edge-biased RGB/block tear; centre-third (hook/void) stays clean
   const EdgeGlitch = {
     uniforms: {
       tDiffuse: { value: null },
@@ -273,7 +318,15 @@ export function createVisual(canvas, audio) {
     glob.position.z = -5 + Math.sin(t * 0.5) * 0.15;
 
     // frame-rate independent trails: pow so large dt (low fps) shortens persistence
-        // 4d: during/after glitch, kill trails so edge tear can't smear into void
+        // Pass 5a Kaleido — mid rotates, bassTime drifts, kick briefly bumps N
+    const targetN = 6 + Math.round(mid * 2) + (kick > 0.5 ? 2 : 0);
+    kaleidoN += (targetN - kaleidoN) * 0.12;
+    kaleidoOff += dt * (0.15 + mid * 0.55 + bassTime * 0.02) + kick * 0.08;
+    kaleido.uniforms.segments.value = Math.max(4, Math.min(10, kaleidoN));
+    kaleido.uniforms.offset.value = kaleidoOff;
+    kaleido.uniforms.mixAmt.value = 0.75 + midAtt * 0.15;
+
+    // 4d: during/after glitch, kill trails so edge tear can't smear into void
     if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) {
       glitchLeft = Math.max(glitchLeft, 10);
       afterCool = Math.max(afterCool, 14);
