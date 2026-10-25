@@ -6,7 +6,7 @@ import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 // Pass 6b: faster flash release + darker idle/settle void
-// Pass 6d: settle snap after hard-cut snatch; portals + 2–3f flash kept
+// Pass 6e: stable idle void floor; settle snap + hard-cut flash kept
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -256,7 +256,7 @@ export function createVisual(canvas, audio) {
   let glitchLeft = 0, afterCool = 0, settleKill = 0;
   // 6b: radial void gate + centre luma clamp (LAST pass) — caps pocket ≤120/255 outside snatch
   const VoidGate = {
-    uniforms: { tDiffuse: { value: null }, cap: { value: 0.45 }, radius: { value: 0.32 }, aspect: { value: W / H }, open: { value: 0 } },
+    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, radius: { value: 0.42 }, aspect: { value: W / H }, open: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec2 vUv;
       void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -266,11 +266,11 @@ export function createVisual(canvas, audio) {
       void main(){
         vec4 c = texture2D(tDiffuse, vUv);
         vec2 d = vUv - 0.5; d.x *= aspect;
-        float g = 1.0 - smoothstep(radius * 0.6, radius, length(d)); // 1 in centre pocket
-        g *= (1.0 - open);
+        float g = 1.0 - smoothstep(radius * 0.85, radius, length(d)); // 6e: harder pocket edge
+        float useCap = mix(cap, 0.92, open); // snatch may punch; never fully unclamp
         float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-        float k = l > cap ? cap / l : 1.0;
-        c.rgb *= mix(1.0, k * 0.92, g); // clamp + slight darken in pocket
+        float k = l > useCap ? useCap / l : 1.0;
+        c.rgb *= mix(1.0, k * 0.90, g); // clamp + darken in pocket
         gl_FragColor = vec4(c.rgb, 1.0);
       }`,
   };
@@ -357,7 +357,9 @@ export function createVisual(canvas, audio) {
       m4.compose(pos, q, scl);
       gates.setMatrixAt(g, m4);
       gateCol.copy(g % 2 === 0 ? MAG : CYAN);
-      gateCol.multiplyScalar(0.55 + kick * 0.45 + (1 - depthT) * 0.35);
+      // 6e: near-camera gates dimmer so idle centre stays ≤120
+      const near = Math.max(0, 1 - depthT);
+      gateCol.multiplyScalar(0.45 + kick * 0.45 + near * 0.18);
       gates.setColorAt(g, gateCol);
     }
     gates.instanceMatrix.needsUpdate = true;
@@ -427,8 +429,9 @@ export function createVisual(canvas, audio) {
     kaleido.uniforms.mixAmt.value = 0.22 + midAtt * 0.08; // light edge only
 
     // Kick flash / snatch — 1–3f, ≤3/s, from kick + bassAtt (not continuous bass)
-    const wantFlash = (kick > 0.55 || (bassAtt > 0.7 && peak > 0.5) || bassHit > 0.75);
-    if (wantFlash && (t - lastFlashT) > 0.34) {
+    // 6e: fewer false opens that spiked idle ~185
+    const wantFlash = (kick > 0.68 || (bassAtt > 0.82 && peak > 0.65) || bassHit > 0.88);
+    if (wantFlash && (t - lastFlashT) > 0.45) {
       lastFlashT = t;
       flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
       flashMode = peak > 0.75 ? 1 : (kick > 0.6 ? (Math.random() > 0.5 ? 2 : 3) : 4);
@@ -464,8 +467,8 @@ export function createVisual(canvas, audio) {
     bloom.strength = (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.22, kick * 0.15 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
-    voidGate.uniforms.cap.value = settleKill > 0 ? 0.38 : 0.45;
-    voidGate.uniforms.radius.value = settleKill > 0 ? 0.40 : 0.32;
+    voidGate.uniforms.cap.value = settleKill > 0 ? 0.36 : 0.40;
+    voidGate.uniforms.radius.value = settleKill > 0 ? 0.46 : 0.42;
     scene.background.setHex(flashLeft > 0 ? BG : 0x000000); // blackout between hits
     renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.72 : 0.82));
     if (glitchLeft > 0) {
