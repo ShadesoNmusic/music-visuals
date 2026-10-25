@@ -6,7 +6,7 @@ import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 // Pass 6b: faster flash release + darker idle/settle void
-// Pass 6a: portal gate frames + kick flash/snatch (owner portal + Shorts punch bar)
+// Pass 6c: hard-cut flash/snatch 2–3f (no magenta fade); portals + void pocket kept
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -276,7 +276,6 @@ export function createVisual(canvas, audio) {
   };
   const voidGate = new ShaderPass(VoidGate);
   composer.addPass(voidGate);
-  let flashEnv = 0;
 
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
   const zAxis = new THREE.Vector3(0, 0, 1), xAxis = new THREE.Vector3(1, 0, 0);
@@ -439,16 +438,13 @@ export function createVisual(canvas, audio) {
     }
     if (flashLeft > 0) {
       kickFlash.uniforms.mode.value = flashMode;
-      flashEnv = 0.85 + kick * 0.15;
-      kickFlash.uniforms.amt.value = flashEnv;
+      kickFlash.uniforms.amt.value = 0.85 + kick * 0.15;
       flashLeft--;
       dampBase_force = 0.05;
     } else {
-      // 6b: env decays ×0.82/frame to hard 0 (no lingering wash)
-      flashEnv *= Math.pow(0.82, Math.max(1, dt * 60));
-      if (flashEnv < 0.04) flashEnv = 0;
-      kickFlash.uniforms.mode.value = flashEnv > 0 ? flashMode : 0;
-      kickFlash.uniforms.amt.value = flashMode === 1 ? 0 : flashEnv * 0.5; // invert never lingers
+      // 6c: hard cut after 2–3f — no magenta fade tail
+      kickFlash.uniforms.mode.value = 0;
+      kickFlash.uniforms.amt.value = 0;
       dampBase_force = 0;
     }
 
@@ -464,7 +460,7 @@ export function createVisual(canvas, audio) {
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = (afterCool > 0 && flashLeft <= 0 ? 0.08 : 0.12) + Math.min(0.22, kick * 0.15 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
-    scene.background.setHex(flashLeft > 0 || flashEnv > 0 ? BG : 0x000000); // blackout between hits
+    scene.background.setHex(flashLeft > 0 ? BG : 0x000000); // blackout between hits
     renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : (afterCool > 0 ? 0.72 : 0.82);
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;

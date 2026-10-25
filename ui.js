@@ -1,6 +1,6 @@
-import { audio } from './audio.js?v=6b';
-import { createVisual } from './visual.js?v=6b';
-import { createExporter } from './export.js?v=6b';
+import { audio } from './audio.js?v=6c';
+import { createVisual } from './visual.js?v=6c';
+import { createExporter } from './export.js?v=6c';
 
 const $ = (id) => document.getElementById(id);
 const vis = createVisual($('c'), audio);
