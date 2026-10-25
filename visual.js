@@ -5,8 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Pass 6b: faster flash release + darker idle/settle void
-// Pass 6e: stable idle void floor; settle snap + hard-cut flash kept
+// Pass 7b: beat violence (scale-pop/shake/bloom/Z) + dense gates; void clamp kept
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;

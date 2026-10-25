@@ -20,3 +20,5 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 #rec{cursor:pointer;background:transparent;border:1px solid #f44;color:#f88;border-radius:999px;padding:2px 10px;font:inherit;font-size:11px;margin:0 8px}
 #rec.live{background:#f22;color:#fff;border-color:#fff;box-shadow:0 0 12px #f44;animation:pulse 1s infinite}
 @keyframes pulse{50%{opacity:.7}}
+
+#pass-tag{position:absolute;top:10px;right:12px;font:600 11px/1 system-ui,sans-serif;color:#8ff;opacity:.55;letter-spacing:.04em;pointer-events:none;z-index:5}
