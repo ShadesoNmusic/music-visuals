@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Pass 5b: no hook chrome; sharper + harder rhythm; Kaleido + edge glitch + Glob + hex
+// Pass 5b2: peakHold snatch + hard kaleido + kick-kill afterimage; no hook chrome
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -142,7 +142,7 @@ export function createVisual(canvas, audio) {
         q.x /= 540.0 / 960.0;
         vec2 uvK = q + 0.5;
         // soft radius: identity in centre (hook/void), full kaleido outside
-        float k = smoothstep(0.12, 0.32, r);
+        float k = smoothstep(0.14, 0.22, r); // 5b2: harder mirror edge
         vec3 base = texture2D(tDiffuse, vUv).rgb;
         vec3 kal = texture2D(tDiffuse, clamp(uvK, 0.0, 1.0)).rgb;
         gl_FragColor = vec4(mix(base, kal, k * mixAmt), 1.0);
@@ -318,21 +318,23 @@ export function createVisual(canvas, audio) {
     glob.position.z = -5 + Math.sin(t * 0.5) * 0.15;
 
     // frame-rate independent trails: pow so large dt (low fps) shortens persistence
-        // Pass 5a Kaleido — mid rotates, bassTime drifts, kick briefly bumps N
-    const targetN = 6 + Math.round(mid * 3) + (kick > 0.45 ? 3 : 0) + (bassHit > 0.5 ? 1 : 0);
-    kaleidoN += (targetN - kaleidoN) * 0.22;
-    kaleidoOff += dt * (0.25 + mid * 0.9 + bassTime * 0.04) + kick * 0.22 + midHit * 0.1;
+            // 5b2 Kaleido — peakHold = hard hit snatch; mid rotate; bassTime drift
+    const peak = audio.peakHold || kick;
+    const targetN = 6 + Math.round(mid * 3) + (peak > 0.55 ? 4 : 0) + (bassHit > 0.5 ? 1 : 0);
+    kaleidoN += (targetN - kaleidoN) * (peak > 0.55 ? 0.55 : 0.22);
+    kaleidoOff += dt * (0.25 + mid * 0.9 + midHit * 0.5 + bassTime * 0.04) + peak * 0.35;
     kaleido.uniforms.segments.value = Math.max(4, Math.min(12, kaleidoN));
     kaleido.uniforms.offset.value = kaleidoOff;
-    kaleido.uniforms.mixAmt.value = 0.7 + midAtt * 0.2 + kick * 0.15;
+    kaleido.uniforms.mixAmt.value = 0.72 + midAtt * 0.2 + peak * 0.2;
 
-    // 4d: during/after glitch, kill trails so edge tear can't smear into void
-    if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) {
+    // kill Afterimage on kick/peak so hits stay sharp in stills
+    if (kick > 0.4 || peak > 0.6 || highHit > 0.35 || bassHit > 0.55) {
       glitchLeft = Math.max(glitchLeft, 10);
-      afterCool = Math.max(afterCool, 14);
+      afterCool = Math.max(afterCool, 18);
     }
-    let dampBase = 0.42 + Math.min(0.06, bass * 0.04);
-    if (afterCool > 0) { dampBase = Math.min(dampBase, 0.15); afterCool--; }
+    let dampBase = 0.38 + Math.min(0.05, bass * 0.03);
+    if (peak > 0.5) dampBase = Math.min(dampBase, 0.08);
+    if (afterCool > 0) { dampBase = Math.min(dampBase, 0.12); afterCool--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = 0.22 + Math.min(0.18, bass * 0.1 + kick * 0.12 + bassAtt * 0.06);
     if (glitchLeft > 0) {
