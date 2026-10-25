@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// Pass 9c: solid opaque Box colonnade (one InstancedMesh, grey only), neon as lights only, half-res Reflector + wet plane floor in lower third; no afterimage/kaleido/additive. Was 9b: opaque mid-grey concrete mass, wet floor raised into view (Reflector half-res + shiny wet plane + neon strips), kaleido/afterimage cut for sharp stills; 9a kick violence + void clamp kept. Was 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
+// Pass 10a: foot light-leak fix (neon lights high+deep, low idle) + hypnagogic morph colonnade<->mandala<->abstract spiral (~6s). Was 9c: solid opaque Box colonnade (one InstancedMesh, grey only), neon as lights only, half-res Reflector + wet plane floor in lower third; no afterimage/kaleido/additive. Was 9b: opaque mid-grey concrete mass, wet floor raised into view (Reflector half-res + shiny wet plane + neon strips), kaleido/afterimage cut for sharp stills; 9a kick violence + void clamp kept. Was 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
 const W = 540, H = 960;
 const RINGS = 16, PER_RING = 5, SPACING = 3.0; // 9c solid colonnade // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -64,7 +64,7 @@ export function createVisual(canvas, audio) {
   const NL = [];
   const MAG = new THREE.Color(0xff00cc), CYAN = new THREE.Color(0x00fff2), HOTPINK = new THREE.Color(0xff2a8a), EBLUE = new THREE.Color(0x1a4dff);
   const NEONS = [MAG, CYAN, HOTPINK, EBLUE];
-  for (let i = 0; i < 4; i++) { const l = new THREE.PointLight(NEONS[i], 40, 18, 1.4); l.position.set(i % 2 ? 4.6 : -4.6, 0.8, -14 - i * 8); scene.add(l); NL.push(l); }
+  for (let i = 0; i < 4; i++) { const l = new THREE.PointLight(NEONS[i], 40, 18, 1.4); l.distance = 10; l.decay = 2; l.position.set(i % 2 ? 2.6 : -2.6, 2.6, -24 - i * 8) /* 10a high+deep: no foot blobs */; scene.add(l); NL.push(l); }
   // Reflector floor (half-res) + high-opacity wet Standard plane on top
   const floorRef = new Reflector(new THREE.PlaneGeometry(14, 100), {
     clipBias: 0.003, textureWidth: W >> 1, textureHeight: H >> 1, color: 0x9a90b0,
@@ -288,7 +288,7 @@ export function createVisual(canvas, audio) {
   const col = new THREE.Color(), capCol = new THREE.Color();
   const spec = () => audio.spectrum && audio.spectrum.length ? audio.spectrum : null;
 
-  let t = 0, speed = 10, scroll = 0;
+  let t = 0, speed = 10, scroll = 0, morphT = 0;
   function frame(dt) {
     dt = Math.min(dt, 0.05);
     t += dt;
@@ -305,6 +305,11 @@ export function createVisual(canvas, audio) {
     const twist = t * 0.08 + bassTime * 0.03;
     const sp = spec();
 
+    // 10a morph clock: ~6s per layout, mid hits nudge forward
+    morphT += dt / 6 + midHit * dt * 0.6;
+    const mPh = morphT % 3, morphI = Math.floor(mPh);
+    const mf = Math.min(1, Math.max(0, (mPh - morphI - 0.45) / 0.55)); const morphF = mf * mf * (3 - 2 * mf);
+    root.rotation.y = Math.sin(t * 0.07) * 0.08;
     // 9c solid colonnade: per ring [inner L, inner R, outer L, outer R, lintel]
     let idx = 0;
     gateLurch *= 0.6;
@@ -314,21 +319,30 @@ export function createVisual(canvas, audio) {
       const z = ringZ[r];
       const wob = Math.sin(t * 0.5 + ringPhase[r]) * 0.05;
       const hw = 2.1 + bass * 0.25, w = 0.95 + bassHit * 0.15, H2 = CEIL_Y - FLOOR_Y;
-      const P = [
+      const P = [ // A colonnade
         [-hw, FLOOR_Y + H2 / 2, w, H2, 1.0], [hw, FLOOR_Y + H2 / 2, w, H2, 1.0],
         [-hw - 1.7, FLOOR_Y + H2 / 2 - 0.2, 1.3, H2 - 0.4, 1.3], [hw + 1.7, FLOOR_Y + H2 / 2 - 0.2, 1.3, H2 - 0.4, 1.3],
         [0, CEIL_Y - 0.3, hw * 2 + w, 0.75, 1.0],
       ];
       for (let k = 0; k < PER_RING; k++, idx++) {
         const d = P[k];
-        pos.set(d[0], d[1], z); q.setFromAxisAngle(zAxis, wob * (k < 4 ? 0.2 : 0));
-        scl.set(d[2], d[3], d[4]); m4.compose(pos, q, scl); pillars.setMatrixAt(idx, m4);
+        // 10a hypnagogic morph: A colonnade -> B mandala spokes -> C abstract spiral (~6s each)
+        const sd = seed[idx];
+        const aB = k * 2 * Math.PI / PER_RING + r * 0.35 + t * 0.25, rB = 2.5 + (r % 3) * 0.35;
+        const B = [Math.cos(aB) * rB, 1.0 + Math.sin(aB) * rB, 0.7, 2.0 + (r % 2) * 0.8, 0.7, aB - Math.PI / 2];
+        const aC = r * 0.7 + k * 1.26 + t * 0.3, rC = 2.2 + sd * 1.6;
+        const C = [Math.cos(aC) * rC, 1.0 + Math.sin(aC) * rC * 0.9, 0.5 + sd * 0.9, 0.6 + sd * 2.2, 0.5 + (1 - sd) * 1.2, aC + t * 0.4 + r * 0.2];
+        const Aa = [d[0], d[1], d[2], d[3], d[4], wob * (k < 4 ? 0.2 : 0)];
+        const L0 = morphI === 0 ? Aa : morphI === 1 ? B : C, L1 = morphI === 0 ? B : morphI === 1 ? C : Aa;
+        const mx = (i) => L0[i] + (L1[i] - L0[i]) * morphF;
+        pos.set(mx(0), Math.max(FLOOR_Y + mx(3) * 0.15, mx(1)), z); q.setFromAxisAngle(zAxis, mx(5));
+        scl.set(mx(2), mx(3), mx(4)); m4.compose(pos, q, scl); pillars.setMatrixAt(idx, m4);
         const v = 0.85 + seed[idx] * 0.3; col.setRGB(v, v * 0.98, v * (0.97 + seed[idx] * 0.06));
         pillars.setColorAt(idx, col);
       }
     }
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
-    for (let i = 0; i < NL.length; i++) NL[i].intensity = 2 + bass * 4 + kick * 120; // 9c neon gaps, not wash
+    for (let i = 0; i < NL.length; i++) NL[i].intensity = 0.5 + bass * 1 + kick * 60; // 10a low idle
 
 
 
