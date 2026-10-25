@@ -4,194 +4,173 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 
+// Pass 2: Synesthesia-inspired hex-pillar tunnel (InstancedMesh, recycled along Z)
 const W = 540, H = 960;
-const RINGS = 72, SPACING = 3.2, SEG = 128;
-const BG = 0x030308;
+const RINGS = 40, PER_RING = 18, SPACING = 1.9;
+const COUNT = RINGS * PER_RING;
+const DEPTH = RINGS * SPACING;
+const BG = 0x020205;
 
-// Quilez cosine palette: a + b*cos(2π(c*t+d))
 function cosPalette(t, a, b, c, d, out) {
-  out.r = a.x + b.x * Math.cos(6.28318 * (c.x * t + d.x));
-  out.g = a.y + b.y * Math.cos(6.28318 * (c.y * t + d.y));
-  out.b = a.z + b.z * Math.cos(6.28318 * (c.z * t + d.z));
-  out.r = Math.min(1, Math.max(0, out.r));
-  out.g = Math.min(1, Math.max(0, out.g));
-  out.b = Math.min(1, Math.max(0, out.b));
+  const f = (i) => Math.min(1, Math.max(0, a[i] + b[i] * Math.cos(6.28318 * (c[i] * t + d[i]))));
+  out.r = f(0); out.g = f(1); out.b = f(2);
   return out;
 }
-const PAL_A = new THREE.Vector3(0.5, 0.5, 0.5);
-const PAL_B = new THREE.Vector3(0.5, 0.5, 0.5);
-const PAL_C = new THREE.Vector3(1.0, 1.0, 1.0);
-const PAL_D = new THREE.Vector3(0.00, 0.33, 0.67); // cyan→magenta neon
+const PAL_A = [0.5, 0.5, 0.5], PAL_B = [0.5, 0.5, 0.5], PAL_C = [1, 1, 1], PAL_D = [0.0, 0.33, 0.67];
 
 export function createVisual(canvas, audio) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(2); renderer.setSize(W, H, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.75;
+  renderer.toneMappingExposure = 0.8;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG);
-  scene.fog = new THREE.FogExp2(BG, 0.018);
-  const camera = new THREE.PerspectiveCamera(72, W / H, 0.1, 400);
-  camera.position.z = 2.5;
+  scene.fog = new THREE.FogExp2(BG, 0.042);
+  const camera = new THREE.PerspectiveCamera(72, W / H, 0.1, 200);
+  camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
 
-  const rings = [];
-  const torusGeo = new THREE.TorusGeometry(1, 0.018, 6, SEG);
-  for (let i = 0; i < RINGS; i++) {
-    const m = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.55,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const mesh = new THREE.Mesh(torusGeo, m);
-    mesh.position.z = -i * SPACING;
-    mesh.userData.phase = (i / RINGS) * Math.PI * 2;
-    mesh.userData.layer = i % 3;
-    mesh.userData.palT = (i / RINGS);
-    root.add(mesh); rings.push(mesh);
-  }
+  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  const camLight = new THREE.PointLight(0xffffff, 40, 30, 1.6);
+  scene.add(camLight);
 
-  const ribbons = [];
-  for (let h = 0; h < 2; h++) {
-    const g = new THREE.BufferGeometry();
-    const N = RINGS * 2;
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
-    const line = new THREE.Line(g, new THREE.LineBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.5,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-    root.add(line);
-    ribbons.push({ line, offset: h * Math.PI, N, palOff: h * 0.5 });
-  }
+  // Hex pillar: 6-sided prism along Y, base at y=0 so it grows outward from the inner face
+  const geo = new THREE.CylinderGeometry(1, 1, 1, 6, 1);
+  geo.translate(0, 0.5, 0);
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x000000, flatShading: true });
+  const pillars = new THREE.InstancedMesh(geo, mat, COUNT);
+  pillars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  root.add(pillars);
 
-  const spokes = [];
-  const SPOKE_N = 24;
-  for (let k = 0; k < SPOKE_N; k++) {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(RINGS * 3), 3));
-    const l = new THREE.Line(g, new THREE.LineBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.28,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-    root.add(l);
-    spokes.push({ line: l, angle: (k / SPOKE_N) * Math.PI * 2, palOff: k / SPOKE_N });
-  }
+  // Thin emissive caps (inner faces) — additive neon edge read
+  const capGeo = new THREE.CircleGeometry(1, 6);
+  const capMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.35,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const caps = new THREE.InstancedMesh(capGeo, capMat, COUNT);
+  caps.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  root.add(caps);
 
-  const STAR_N = 600;
+  const ringZ = new Float32Array(RINGS);
+  const ringPhase = new Float32Array(RINGS);
+  const seed = new Float32Array(COUNT);
+  for (let r = 0; r < RINGS; r++) { ringZ[r] = -r * SPACING; ringPhase[r] = Math.random() * 6.28; }
+  for (let i = 0; i < COUNT; i++) seed[i] = Math.random();
+
+  // very dim spark field
+  const STAR_N = 300;
   const starPos = new Float32Array(STAR_N * 3);
-  for (let i = 0; i < STAR_N; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const rad = 2.2 + Math.random() * 10;
-    starPos[i * 3] = Math.cos(a) * rad;
-    starPos[i * 3 + 1] = Math.sin(a) * rad;
-    starPos[i * 3 + 2] = -Math.random() * RINGS * SPACING;
-  }
+  const resetStar = (i, z) => {
+    const a = Math.random() * 6.28, rad = 0.5 + Math.random() * 3;
+    starPos[i * 3] = Math.cos(a) * rad; starPos[i * 3 + 1] = Math.sin(a) * rad; starPos[i * 3 + 2] = z;
+  };
+  for (let i = 0; i < STAR_N; i++) resetStar(i, -Math.random() * DEPTH);
   const starGeo = new THREE.BufferGeometry();
   starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
   const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
-    color: 0xffffff, size: 0.07, transparent: true, opacity: 0.65,
-    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    color: 0xffffff, size: 0.04, transparent: true, opacity: 0.25,
+    blending: THREE.AdditiveBlending, depthWrite: false,
   }));
   root.add(stars);
 
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(2); composer.setSize(W, H);
   composer.addPass(new RenderPass(scene, camera));
-  // Synesthesia-style trails (damp ~0.88 — not so sticky it washes)
   const after = new AfterimagePass(0.88);
   composer.addPass(after);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.5, 0.35, 0.55);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.5, 0.35, 0.6);
   composer.addPass(bloom);
 
-  let t = 0, speed = 36;
-  const tmp = new THREE.Color();
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
+  const zAxis = new THREE.Vector3(0, 0, 1), xAxis = new THREE.Vector3(1, 0, 0);
+  const qCap = new THREE.Quaternion().setFromAxisAngle(xAxis, Math.PI / 2);
+  const qTmp = new THREE.Quaternion();
+  const col = new THREE.Color(), capCol = new THREE.Color();
+  const spec = () => audio.spectrum && audio.spectrum.length ? audio.spectrum : null;
+
+  let t = 0, speed = 10, scroll = 0;
   function frame(dt) {
+    dt = Math.min(dt, 0.05);
     t += dt;
-    speed += ((24 + audio.bass * 90 + audio.kick * 55) - speed) * 0.12;
-    const wave = 0.04 + audio.mid * 0.45;
-    const trebleW = audio.treble * 0.2;
-    // palette phase: mids + BPM-ish sine (use kick pulse if bpm unknown)
-    const bpmHz = audio.bpm > 0 ? audio.bpm / 60 : 2;
-    const palDrive = audio.mid * 0.45 + (audio.midHit || 0) * 0.25 + 0.08 * Math.sin(t * bpmHz * Math.PI * 2) + audio.bassTime * 0.015;
+    const bass = audio.bass || 0, mid = audio.mid || 0, treble = audio.treble || 0;
+    const kick = audio.kick || 0, bassAtt = audio.bassAtt || 0, midAtt = audio.midAtt || 0;
+    const bassHit = audio.bassHit || 0, midHit = audio.midHit || 0, highHit = audio.highHit || 0;
+    const bassTime = audio.bassTime || 0;
 
-    for (const r of rings) {
-      r.position.z += speed * dt;
-      if (r.position.z > 5) {
-        r.position.z -= RINGS * SPACING;
-        r.userData.phase = Math.random() * 6.28;
+    speed += ((7 + bass * 22 + kick * 14) - speed) * 0.1;
+    scroll += speed * dt;
+    const radius = 2.4 + bass * 0.5 + bassAtt * 0.35 + kick * 0.25;
+    const thick = 0.26 + bass * 0.08 + bassHit * 0.06;
+    const palDrive = mid * 0.4 + midHit * 0.25 + bassTime * 0.02;
+    const twist = t * 0.08 + bassTime * 0.03;
+    const sp = spec();
+
+    let idx = 0;
+    for (let r = 0; r < RINGS; r++) {
+      ringZ[r] += speed * dt;
+      if (ringZ[r] > 4) { ringZ[r] -= DEPTH; ringPhase[r] = Math.random() * 6.28; }
+      const z = ringZ[r];
+      const depthT = (-z + 4) / DEPTH;
+      const ringOff = (r % 2) * (Math.PI / PER_RING) + twist;
+      for (let k = 0; k < PER_RING; k++, idx++) {
+        const a = (k / PER_RING) * Math.PI * 2 + ringOff;
+        const s = seed[idx];
+        let band = 0;
+        if (sp) band = (sp[Math.floor((k / PER_RING) * sp.length * 0.6)] || 0);
+        // inner face pushes in with spectrum/treble → organic relief
+        const inward = s * 0.5 + band * 0.9 + Math.sin(t * 1.3 + ringPhase[r] + k) * (0.08 + midAtt * 0.25) + highHit * s * 0.3;
+        const inner = Math.max(0.9, radius - inward);
+        const len = 3 + inward;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        pos.set(ca * inner, sa * inner, z);
+        q.setFromAxisAngle(zAxis, a - Math.PI / 2); // local +Y points outward
+        scl.set(thick, len, thick);
+        m4.compose(pos, q, scl);
+        pillars.setMatrixAt(idx, m4);
+
+        cosPalette(s * 0.35 + depthT * 0.6 + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, col);
+        col.multiplyScalar(0.55);
+        pillars.setColorAt(idx, col);
+
+        // cap on inner face, facing the axis
+        pos.set(ca * (inner - 0.01), sa * (inner - 0.01), z);
+        qTmp.copy(q).multiply(qCap);
+        scl.set(thick * 0.92, thick * 0.92, 1);
+        m4.compose(pos, qTmp, scl);
+        caps.setMatrixAt(idx, m4);
+        const glow = 0.25 + band * 0.6 + (s > 0.85 ? midHit * 0.8 : 0);
+        capCol.copy(col).multiplyScalar(glow * 1.6);
+        caps.setColorAt(idx, capCol);
       }
-      const layerScale = 1 + r.userData.layer * 0.08;
-      const rad = (6.2 + audio.bass * 2.8) * layerScale
-        + Math.sin(t * 1.1 + r.userData.phase) * wave
-        + Math.sin(t * 3.2 + r.userData.phase * 2) * trebleW;
-      r.scale.set(rad, rad, 1);
-      r.rotation.z = t * 0.12 + r.userData.phase * 0.08 + audio.bassTime * 0.02;
-      cosPalette(r.userData.palT + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, tmp);
-      r.material.color.copy(tmp);
-      r.material.opacity = 0.38 + audio.bass * 0.12 + audio.kick * 0.2 + (audio.bassAtt || 0) * 0.25;
     }
+    pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
+    caps.instanceMatrix.needsUpdate = true; caps.instanceColor.needsUpdate = true;
+    capMat.opacity = 0.3 + kick * 0.25;
 
-    const sorted = [...rings].sort((a, b) => a.position.z - b.position.z);
-
-    ribbons.forEach(({ line, offset, N, palOff }) => {
-      const p = line.geometry.attributes.position.array;
-      for (let i = 0; i < N; i++) {
-        const z = -i * (SPACING * 0.5) + ((t * speed * 0.15) % (SPACING * 0.5));
-        const a = offset + i * 0.35 + t * 1.4;
-        const rad = 4.5 + audio.bass * 2 + Math.sin(i * 0.2 + t) * (0.3 + audio.mid * 0.8);
-        p[i * 3] = Math.cos(a) * rad;
-        p[i * 3 + 1] = Math.sin(a) * rad;
-        p[i * 3 + 2] = z - 10;
-      }
-      line.geometry.attributes.position.needsUpdate = true;
-      cosPalette(palOff + palDrive * 1.2, PAL_A, PAL_B, PAL_C, PAL_D, tmp);
-      line.material.color.copy(tmp);
-      line.material.opacity = 0.32 + audio.treble * 0.3 + audio.kick * 0.2;
-    });
-
-    spokes.forEach(({ line, angle, palOff }) => {
-      const p = line.geometry.attributes.position.array;
-      const twist = t * 0.25 + audio.mid * 0.4 + audio.bassTime * 0.05;
-      sorted.forEach((r, i) => {
-        const rad = r.scale.x * 0.98;
-        p[i * 3] = Math.cos(angle + twist) * rad;
-        p[i * 3 + 1] = Math.sin(angle + twist) * rad;
-        p[i * 3 + 2] = r.position.z;
-      });
-      line.geometry.attributes.position.needsUpdate = true;
-      cosPalette(palOff + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, tmp);
-      line.material.color.copy(tmp);
-    });
-
-    const sp = stars.geometry.attributes.position.array;
-    const kickPush = audio.kick * 0.35;
     for (let i = 0; i < STAR_N; i++) {
-      sp[i * 3] *= 1 + kickPush * 0.02;
-      sp[i * 3 + 1] *= 1 + kickPush * 0.02;
-      sp[i * 3 + 2] += speed * dt * 0.85;
-      if (sp[i * 3 + 2] > 5) {
-        const a = Math.random() * Math.PI * 2;
-        const rad = 2.2 + Math.random() * 10;
-        sp[i * 3] = Math.cos(a) * rad;
-        sp[i * 3 + 1] = Math.sin(a) * rad;
-        sp[i * 3 + 2] -= RINGS * SPACING;
-      }
+      starPos[i * 3 + 2] += speed * dt * 1.3;
+      if (starPos[i * 3 + 2] > 4) resetStar(i, starPos[i * 3 + 2] - DEPTH);
     }
-    stars.geometry.attributes.position.needsUpdate = true;
-    stars.material.opacity = 0.4 + audio.treble * 0.45;
+    starGeo.attributes.position.needsUpdate = true;
+    stars.material.opacity = 0.15 + treble * 0.25;
 
-    const s = 1 + audio.kick * 0.18; root.scale.set(s, s, 1);
-    camera.fov = 72 - audio.kick * 12; camera.updateProjectionMatrix();
-    camera.position.z = 2.5 + Math.sin(audio.bassTime * 0.7) * 0.35;
-    camera.rotation.z = Math.sin(t * 0.2) * 0.05 + audio.mid * 0.03;
-    // trails stick a bit more on bass; bloom stays parked (no white-out)
-    after.uniforms.damp.value = 0.86 + Math.min(0.06, audio.bass * 0.06) + Math.min(0.04, (audio.bassAtt || 0) * 0.05);
-    bloom.strength = 0.45 + Math.min(0.2, audio.bass * 0.15 + (audio.bassAtt || 0) * 0.12);
+    // organic corkscrew camera
+    const drift = 0.25 + mid * 0.5;
+    camera.position.x = Math.sin(t * 0.37 + bassTime * 0.05) * drift;
+    camera.position.y = Math.cos(t * 0.29) * drift * 0.8;
+    camera.rotation.z = Math.sin(t * 0.15) * 0.35 + bassTime * 0.01 + mid * 0.08;
+    camera.lookAt(0, 0, -20);
+    camera.rotation.z += Math.sin(t * 0.15) * 0.35;
+    camera.fov = 72 - kick * 10; camera.updateProjectionMatrix();
+    const ks = 1 + kick * 0.08; root.scale.set(ks, ks, 1);
+    camLight.position.copy(camera.position);
+    camLight.intensity = 30 + bass * 20;
+
+    after.uniforms.damp.value = 0.86 + Math.min(0.04, bass * 0.04) + Math.min(0.02, bassAtt * 0.03);
+    bloom.strength = 0.45 + Math.min(0.15, bass * 0.1 + bassAtt * 0.08); // parked: 0.45–0.60
     composer.render();
   }
   return { frame, renderer };
