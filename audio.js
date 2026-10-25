@@ -114,14 +114,15 @@ export const audio = {
     this._slow.mid = this._env(this._slow.mid, this.mid, dt, 0.4, 0.4);
     this._slow.high = this._env(this._slow.high, this.high, dt, 0.35, 0.35);
 
-    this.bassHit = Math.min(1, Math.max(0, this.bass - this._slow.bass) * 3);
-    this.midHit = Math.min(1, Math.max(0, this.mid - this._slow.mid) * 3);
-    this.highHit = Math.min(1, Math.max(0, this.high - this._slow.high) * 3);
+    // tighter peaks for Shorts-style hit flash (owner ref CxkLss9Sg3Q)
+    this.bassHit = Math.min(1, Math.max(0, this.bass - this._slow.bass) * 4.5);
+    this.midHit = Math.min(1, Math.max(0, this.mid - this._slow.mid) * 4.5);
+    this.highHit = Math.min(1, Math.max(0, this.high - this._slow.high) * 4.5);
 
-    // attack/release driven by hits (for post: CA, glitch, bloom)
-    this.bassAtt = this._env(this.bassAtt, this.bassHit, dt, 0.01, 0.25);
-    this.midAtt = this._env(this.midAtt, this.midHit, dt, 0.015, 0.3);
-    this.highAtt = this._env(this.highAtt, this.highHit, dt, 0.01, 0.2);
+    // attack/release driven by hits (for post: CA, glitch, bloom) — snappier release
+    this.bassAtt = this._env(this.bassAtt, this.bassHit, dt, 0.008, 0.18);
+    this.midAtt = this._env(this.midAtt, this.midHit, dt, 0.01, 0.22);
+    this.highAtt = this._env(this.highAtt, this.highHit, dt, 0.008, 0.15);
 
     // integrated bass → camera Z / tunnel scroll
     this.bassTime += this.bass * dt * (1 + this.kick * 2);
