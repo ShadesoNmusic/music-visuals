@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Pass 4c: edge-biased hit Glitch (protect centre-third void) + 3a Glob + 2f hex
+// Pass 4c2: wider centre dead-zone + 10f edge glitch (void gate) + 3a + 2f
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -132,7 +132,7 @@ export function createVisual(canvas, audio) {
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       void main() {
         // 0 in centre-third, 1 toward top/bottom — protects hook + void pocket
-        float edge = smoothstep(0.10, 0.28, abs(vUv.y - 0.5));
+        float edge = smoothstep(0.18, 0.34, abs(vUv.y - 0.5)); // full centre-third dead
         float amp = amount * edge;
         if (amp < 0.001) {
           gl_FragColor = texture2D(tDiffuse, vUv);
@@ -275,9 +275,9 @@ export function createVisual(canvas, audio) {
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
     // 4c: ~8-frame edge-only bursts — readable tear, void centre stays dark
-    if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) glitchLeft = Math.max(glitchLeft, 8);
+    if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) glitchLeft = Math.max(glitchLeft, 10);
     if (glitchLeft > 0) {
-      glitch.uniforms.amount.value = 0.045 + kick * 0.04 + highHit * 0.035;
+      glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
       glitch.uniforms.seed.value = Math.random() * 10;
       glitch.uniforms.colShift.value = 0.012 + highHit * 0.01;
