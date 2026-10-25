@@ -4,7 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 
-// Pass 2f: silhouette dial — fat hex flats that read in TikTok stills (not thin rings)
+// Pass 3a: centre Glob (hook-safe orb) + Pass 2f hex tunnel
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -77,6 +77,27 @@ export function createVisual(canvas, audio) {
     blending: THREE.AdditiveBlending, depthWrite: false,
   }));
   root.add(stars);
+
+  // Pass 3a Glob — centre orb for hook space (small, dark core, soft shell)
+  const GLOB_DETAIL = 3;
+  const globGeo = new THREE.IcosahedronGeometry(1, GLOB_DETAIL);
+  const globBase = Float32Array.from(globGeo.attributes.position.array);
+  const globMat = new THREE.MeshLambertMaterial({
+    color: 0xffffff, emissive: 0x151528, flatShading: true,
+    transparent: true, opacity: 0.88, depthWrite: true,
+  });
+  const glob = new THREE.Mesh(globGeo, globMat);
+  glob.position.set(0, 0, -5);
+  scene.add(glob); // not under root kick-scale — keeps hook framing stable
+  const shellGeo = new THREE.IcosahedronGeometry(1.08, 2);
+  const shellMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.18,
+    blending: THREE.AdditiveBlending, depthWrite: false, wireframe: true,
+  });
+  const shell = new THREE.Mesh(shellGeo, shellMat);
+  glob.add(shell);
+  const globCol = new THREE.Color();
+  let globScale = 0.55;
 
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(2); composer.setSize(W, H);
@@ -159,6 +180,35 @@ export function createVisual(canvas, audio) {
     starGeo.attributes.position.needsUpdate = true;
     stars.material.opacity = 0.15 + treble * 0.25;
 
+    // Pass 3a Glob morph — bass size, kick punch, mid palette, treble ripples
+    // keep radius modest so centre-third stays dark for TikTok hook text
+    const targetGlob = 0.48 + bass * 0.22 + bassAtt * 0.12 + kick * 0.18;
+    globScale += (targetGlob - globScale) * 0.18;
+    const posArr = globGeo.attributes.position.array;
+    for (let i = 0; i < posArr.length; i += 3) {
+      const bx = globBase[i], by = globBase[i + 1], bz = globBase[i + 2];
+      const n = Math.sqrt(bx * bx + by * by + bz * bz) || 1;
+      const nx = bx / n, ny = by / n, nz = bz / n;
+      const w =
+        Math.sin(nx * 4.2 + t * 1.7 + bassTime) * (0.06 + mid * 0.08) +
+        Math.sin(ny * 5.1 - t * 2.1 + midHit) * (0.05 + treble * 0.1) +
+        Math.sin(nz * 3.4 + t * 1.3) * (0.04 + highHit * 0.08) +
+        kick * 0.07 * Math.sin(n * 9 + t * 8);
+      const r = 1 + w;
+      posArr[i] = nx * r; posArr[i + 1] = ny * r; posArr[i + 2] = nz * r;
+    }
+    globGeo.attributes.position.needsUpdate = true;
+    globGeo.computeVertexNormals();
+    glob.scale.setScalar(globScale);
+    glob.rotation.y = t * 0.35 + bassTime * 0.05;
+    glob.rotation.x = Math.sin(t * 0.4) * 0.25 + mid * 0.15;
+    cosPalette(0.55 + palDrive * 0.5 + kick * 0.1, PAL_A, PAL_B, PAL_C, PAL_D, globCol);
+    globMat.color.copy(globCol).multiplyScalar(0.55);
+    globMat.emissive.copy(globCol).multiplyScalar(0.12 + kick * 0.15);
+    shellMat.color.copy(globCol);
+    shellMat.opacity = 0.12 + mid * 0.12 + kick * 0.15;
+    shell.rotation.y = -t * 0.55;
+
     // organic corkscrew camera
     const drift = 0.25 + mid * 0.5;
     camera.position.x = Math.sin(t * 0.37 + bassTime * 0.05) * drift;
@@ -170,6 +220,10 @@ export function createVisual(canvas, audio) {
     const ks = 1 + kick * 0.08; root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
     camLight.intensity = 30 + bass * 20;
+    // glob tracks camera lightly — stays in centre-third for hook overlay
+    glob.position.x = camera.position.x * 0.35;
+    glob.position.y = camera.position.y * 0.35;
+    glob.position.z = -5 + Math.sin(t * 0.5) * 0.15;
 
     // frame-rate independent trails: pow so large dt (low fps) shortens persistence
     const dampBase = 0.60 + Math.min(0.05, bass * 0.03);
