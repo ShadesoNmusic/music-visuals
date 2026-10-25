@@ -108,17 +108,16 @@ export function createVisual(canvas, audio) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.5, 0.35, 0.55);
   composer.addPass(bloom);
 
-  let t = 0, speed = 36, bassTime = 0;
+  let t = 0, speed = 36;
   const tmp = new THREE.Color();
   function frame(dt) {
     t += dt;
-    bassTime += dt * (0.35 + audio.bass * 2.2); // running bass → camera Z feel
     speed += ((24 + audio.bass * 90 + audio.kick * 55) - speed) * 0.12;
     const wave = 0.04 + audio.mid * 0.45;
     const trebleW = audio.treble * 0.2;
     // palette phase: mids + BPM-ish sine (use kick pulse if bpm unknown)
     const bpmHz = audio.bpm > 0 ? audio.bpm / 60 : 2;
-    const palDrive = audio.mid * 0.55 + 0.08 * Math.sin(t * bpmHz * Math.PI * 2) + bassTime * 0.015;
+    const palDrive = audio.mid * 0.45 + (audio.midHit || 0) * 0.25 + 0.08 * Math.sin(t * bpmHz * Math.PI * 2) + audio.bassTime * 0.015;
 
     for (const r of rings) {
       r.position.z += speed * dt;
@@ -131,10 +130,10 @@ export function createVisual(canvas, audio) {
         + Math.sin(t * 1.1 + r.userData.phase) * wave
         + Math.sin(t * 3.2 + r.userData.phase * 2) * trebleW;
       r.scale.set(rad, rad, 1);
-      r.rotation.z = t * 0.12 + r.userData.phase * 0.08 + bassTime * 0.02;
+      r.rotation.z = t * 0.12 + r.userData.phase * 0.08 + audio.bassTime * 0.02;
       cosPalette(r.userData.palT + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, tmp);
       r.material.color.copy(tmp);
-      r.material.opacity = 0.38 + audio.bass * 0.15 + audio.kick * 0.28;
+      r.material.opacity = 0.38 + audio.bass * 0.12 + audio.kick * 0.2 + (audio.bassAtt || 0) * 0.25;
     }
 
     const sorted = [...rings].sort((a, b) => a.position.z - b.position.z);
@@ -157,7 +156,7 @@ export function createVisual(canvas, audio) {
 
     spokes.forEach(({ line, angle, palOff }) => {
       const p = line.geometry.attributes.position.array;
-      const twist = t * 0.25 + audio.mid * 0.4 + bassTime * 0.05;
+      const twist = t * 0.25 + audio.mid * 0.4 + audio.bassTime * 0.05;
       sorted.forEach((r, i) => {
         const rad = r.scale.x * 0.98;
         p[i * 3] = Math.cos(angle + twist) * rad;
@@ -188,11 +187,11 @@ export function createVisual(canvas, audio) {
 
     const s = 1 + audio.kick * 0.18; root.scale.set(s, s, 1);
     camera.fov = 72 - audio.kick * 12; camera.updateProjectionMatrix();
-    camera.position.z = 2.5 + Math.sin(bassTime * 0.7) * 0.35;
+    camera.position.z = 2.5 + Math.sin(audio.bassTime * 0.7) * 0.35;
     camera.rotation.z = Math.sin(t * 0.2) * 0.05 + audio.mid * 0.03;
     // trails stick a bit more on bass; bloom stays parked (no white-out)
-    after.uniforms.damp.value = 0.86 + Math.min(0.06, audio.bass * 0.08);
-    bloom.strength = 0.48 + Math.min(0.18, audio.bass * 0.22);
+    after.uniforms.damp.value = 0.86 + Math.min(0.06, audio.bass * 0.06) + Math.min(0.04, (audio.bassAtt || 0) * 0.05);
+    bloom.strength = 0.45 + Math.min(0.2, audio.bass * 0.15 + (audio.bassAtt || 0) * 0.12);
     composer.render();
   }
   return { frame, renderer };
