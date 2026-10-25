@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
+// Pass 6b: faster flash release + darker idle/settle void
 // Pass 6a: portal gate frames + kick flash/snatch (owner portal + Shorts punch bar)
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
@@ -33,7 +34,7 @@ export function createVisual(canvas, audio) {
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.18));
   const camLight = new THREE.PointLight(0xffffff, 40, 30, 1.6);
   scene.add(camLight);
 
@@ -372,10 +373,10 @@ export function createVisual(canvas, audio) {
     glob.rotation.y = t * 0.35 + bassTime * 0.05;
     glob.rotation.x = Math.sin(t * 0.4) * 0.25 + mid * 0.15;
     cosPalette(0.55 + palDrive * 0.5 + kick * 0.1, PAL_A, PAL_B, PAL_C, PAL_D, globCol);
-    globMat.color.copy(globCol).multiplyScalar(0.55);
-    globMat.emissive.copy(globCol).multiplyScalar(0.1 + kick * 0.35 + bassHit * 0.2);
+    globMat.color.copy(globCol).multiplyScalar(0.42);
+    globMat.emissive.copy(globCol).multiplyScalar(0.03 + kick * 0.35 + bassHit * 0.2);
     shellMat.color.copy(globCol);
-    shellMat.opacity = 0.12 + mid * 0.12 + kick * 0.15;
+    shellMat.opacity = 0.06 + mid * 0.12 + kick * 0.15;
     shell.rotation.y = -t * 0.55;
 
     // organic corkscrew camera
@@ -388,7 +389,7 @@ export function createVisual(canvas, audio) {
     camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0); camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.14; root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
-    camLight.intensity = 28 + bass * 35 + kick * 25;
+    camLight.intensity = 18 + bass * 35 + kick * 25;
     // glob tracks camera lightly — stays in centre-third for hook overlay
     glob.position.x = camera.position.x * 0.35;
     glob.position.y = camera.position.y * 0.35;
@@ -410,7 +411,7 @@ export function createVisual(canvas, audio) {
       flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
       flashMode = peak > 0.75 ? 1 : (kick > 0.6 ? (Math.random() > 0.5 ? 2 : 3) : 4);
       gateLurch = SPACING * 0.55; // gate lurch one step
-      afterCool = Math.max(afterCool, 20);
+      afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
     }
     if (flashLeft > 0) {
@@ -429,13 +430,13 @@ export function createVisual(canvas, audio) {
       glitchLeft = Math.max(glitchLeft, 10);
       afterCool = Math.max(afterCool, 18);
     }
-    let dampBase = 0.32 + Math.min(0.05, bass * 0.03);
+    let dampBase = 0.24 + Math.min(0.05, bass * 0.03);
     if (dampBase_force) dampBase = dampBase_force;
     if (peak > 0.5) dampBase = Math.min(dampBase, 0.08);
-    if (afterCool > 0) { dampBase = Math.min(dampBase, 0.12); afterCool--; }
+    if (afterCool > 0) { dampBase = Math.min(dampBase, 0.04); afterCool--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = 0.22 + Math.min(0.22, bass * 0.1 + kick * 0.15 + bassAtt * 0.08);
-    renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : 0.95;
+    bloom.strength = (afterCool > 0 && flashLeft <= 0 ? 0.1 : 0.16) + Math.min(0.22, bass * 0.1 + kick * 0.15 + bassAtt * 0.08);
+    renderer.toneMappingExposure = flashLeft > 0 ? 1.35 : (afterCool > 0 ? 0.72 : 0.82);
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
