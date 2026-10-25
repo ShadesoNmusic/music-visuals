@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { GlitchPass } from 'three/addons/postprocessing/GlitchPass.js';
 
-// Pass 4a: hit-triggered Glitch + Pass 3a Glob + Pass 2f hex tunnel
+// Pass 4b: longer/stronger hit Glitch (readable in TikTok stills) + 3a Glob + 2f hex
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -235,11 +235,17 @@ export function createVisual(canvas, audio) {
     const dampBase = 0.60 + Math.min(0.05, bass * 0.03);
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
-    // brief glitch bursts on kick / high hit — phone-safe, keeps void readable
-    if (kick > 0.55 || highHit > 0.5 || (bassHit > 0.7 && midHit > 0.5)) glitchLeft = 2;
+    // 4b: longer bursts so CA/block tear reads in stills/exports (~8–12 frames @60)
+    if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) glitchLeft = Math.max(glitchLeft, 10);
     glitch.goWild = glitchLeft > 0;
-    if (glitchLeft > 0) glitchLeft--;
-    if (!glitch.goWild) glitch.uniforms.byp.value = 1;
+    if (glitchLeft > 0) {
+      glitchLeft--;
+      // punch amount while wild so a single export frame still shows tear
+      glitch.uniforms.amount.value = 0.08 + kick * 0.12 + highHit * 0.1;
+      glitch.uniforms.byp.value = 0;
+    } else {
+      glitch.uniforms.byp.value = 1;
+    }
     composer.render();
   }
   return { frame, renderer };
