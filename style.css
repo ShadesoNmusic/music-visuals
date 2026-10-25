@@ -5,7 +5,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 #safe-top{position:absolute;top:0;left:0;right:0;height:10%;pointer-events:none}
 #safe-bottom{position:absolute;bottom:0;left:0;right:0;height:20%;pointer-events:none}
 #center{position:absolute;top:33.33%;height:33.33%;left:6%;right:6%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;overflow:hidden}
-#hook{pointer-events:auto;outline:none;font-weight:900;font-size:min(9vh,16vw);line-height:1.05;text-transform:uppercase;letter-spacing:.02em;
+#hook,#bpm,#center{display:none!important}#hook{pointer-events:auto;outline:none;font-weight:900;font-size:min(9vh,16vw);line-height:1.05;text-transform:uppercase;letter-spacing:.02em;
  max-width:100%;max-height:100%;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;
  text-shadow:0 0 .15em #0ff,0 0 .4em #f0f,0 0 .8em #f0a;transition:transform 60ms,font-size 120ms}
 #hook.long{font-size:min(6.5vh,12vw)}

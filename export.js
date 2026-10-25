@@ -1,5 +1,4 @@
-// export.js — MediaRecorder 9:16 export with hook/BPM burned in + audio track.
-// TikTok lane: 1080×1920 webm, center-third text, safe of top 10% / bottom 20%.
+// export.js — MediaRecorder 9:16 export + audio track (5b: no hook/BPM burn-in).
 
 const W = 1080, H = 1920;
 
@@ -31,7 +30,7 @@ function wrapLines(ctx, text, maxWidth) {
   return lines;
 }
 
-export function createExporter({ glCanvas, hookEl, bpmEl, showBpmEl, audio }) {
+export function createExporter({ glCanvas, audio }) {
   const out = document.createElement('canvas');
   out.width = W; out.height = H;
   const ctx = out.getContext('2d');
@@ -40,51 +39,8 @@ export function createExporter({ glCanvas, hookEl, bpmEl, showBpmEl, audio }) {
   function paint() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
-    // Three.js canvas backing store is already 1080×1920
     ctx.drawImage(glCanvas, 0, 0, W, H);
-
-    const text = (hookEl.innerText || '').trim();
-    const kick = audio.kick || 0;
-    const scale = 1 + kick * 0.08;
-
-    if (text) {
-      ctx.save();
-      ctx.translate(W / 2, H * 0.5);
-      ctx.scale(scale, scale);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#fff';
-      ctx.shadowColor = '#00ffff';
-      ctx.shadowBlur = 24;
-      // Long hooks (≤250 chars) need smaller type; short hooks stay big
-      const fontSize = text.length > 130 ? 48 : text.length > 80 ? 60 : text.length > 40 ? 76 : 96;
-      ctx.font = `900 ${fontSize}px system-ui,-apple-system,sans-serif`;
-      const lines = wrapLines(ctx, text.toUpperCase(), W * 0.82);
-      const lh = fontSize * 1.05;
-      const startY = -((lines.length - 1) * lh) / 2;
-      lines.forEach((ln, i) => {
-        ctx.shadowColor = '#ff00cc';
-        ctx.shadowBlur = 36;
-        ctx.fillText(ln, 0, startY + i * lh);
-        ctx.shadowColor = '#00ffff';
-        ctx.shadowBlur = 18;
-        ctx.fillText(ln, 0, startY + i * lh);
-      });
-      ctx.restore();
-    }
-
-    if (showBpmEl?.checked && audio.bpm) {
-      ctx.save();
-      ctx.fillStyle = '#00ffff';
-      ctx.shadowColor = '#00ffff';
-      ctx.shadowBlur = 12;
-      ctx.font = '700 36px system-ui,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.letterSpacing = '8px';
-      ctx.fillText(`${audio.bpm} BPM`, W / 2, H * 0.5 + 120);
-      ctx.restore();
-    }
+    // 5b: no hook/BPM burn-in — centre-third is pure visual
   }
 
   function tick() {

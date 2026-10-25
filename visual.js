@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-// Pass 5a: Kaleido (polar wedges, centre identity) + Pass 4d edge glitch + 3a Glob + 2f hex
+// Pass 5b: no hook chrome; sharper + harder rhythm; Kaleido + edge glitch + Glob + hex
 const W = 540, H = 960;
 const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -23,12 +23,12 @@ export function createVisual(canvas, audio) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(2); renderer.setSize(W, H, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.8;
+  renderer.toneMappingExposure = 0.95; // 5b: snappier contrast
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG);
-  scene.fog = new THREE.FogExp2(BG, 0.07);
+  scene.fog = new THREE.FogExp2(BG, 0.045); // 5b: less fog wash
   const camera = new THREE.PerspectiveCamera(72, W / H, 0.1, 200);
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
@@ -103,9 +103,9 @@ export function createVisual(canvas, audio) {
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(2); composer.setSize(W, H);
   composer.addPass(new RenderPass(scene, camera));
-  const after = new AfterimagePass(0.60); // 2f: less smear so hex edges survive stills
+  const after = new AfterimagePass(0.42); // 5b: much less blur — hits must read in stills
   composer.addPass(after);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.42, 0.3, 0.65);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.28, 0.2, 0.72); // 5b: tighter bloom
   composer.addPass(bloom);
   // Pass 5a — polar kaleido; soft radius keeps centre-third identity for hook/void
   const KaleidoShader = {
@@ -215,11 +215,11 @@ export function createVisual(canvas, audio) {
     const bassHit = audio.bassHit || 0, midHit = audio.midHit || 0, highHit = audio.highHit || 0;
     const bassTime = audio.bassTime || 0;
 
-    speed += ((7 + bass * 22 + kick * 14) - speed) * 0.1;
+    speed += ((8 + bass * 28 + kick * 22) - speed) * 0.18; // 5b: snappier rhythm
     scroll += speed * dt;
-    const radius = 2.4 + bass * 0.5 + bassAtt * 0.35 + kick * 0.25;
-    const thick = 0.95 + bass * 0.22 + bassHit * 0.15; // fat hex cross-section — silhouette first
-    const palDrive = mid * 0.4 + midHit * 0.25 + bassTime * 0.02;
+    const radius = 2.4 + bass * 0.85 + bassAtt * 0.5 + kick * 0.55;
+    const thick = 0.95 + bass * 0.35 + bassHit * 0.28 + kick * 0.2;
+    const palDrive = mid * 0.55 + midHit * 0.45 + bassHit * 0.25 + kick * 0.2 + bassTime * 0.03;
     const twist = t * 0.08 + bassTime * 0.03;
     const sp = spec();
 
@@ -247,7 +247,7 @@ export function createVisual(canvas, audio) {
         pillars.setMatrixAt(idx, m4);
 
         cosPalette(s * 0.35 + depthT * 0.6 + palDrive, PAL_A, PAL_B, PAL_C, PAL_D, col);
-        col.multiplyScalar(0.42);
+        col.multiplyScalar(0.38 + kick * 0.25 + bassHit * 0.2 + band * 0.35); // break uniform wash
         pillars.setColorAt(idx, col);
 
         // cap on inner face, facing the axis
@@ -256,14 +256,14 @@ export function createVisual(canvas, audio) {
         scl.set(thick * 1.4, thick * 1.4, 1); // oversized hex caps — dominate the frame
         m4.compose(pos, qTmp, scl);
         caps.setMatrixAt(idx, m4);
-        const glow = 0.25 + band * 0.6 + (s > 0.85 ? midHit * 0.8 : 0);
+        const glow = 0.2 + band * 0.85 + midHit * 0.55 + kick * 0.4 + (s > 0.85 ? highHit * 0.9 : 0);
         capCol.copy(col).multiplyScalar(glow * 1.6);
         caps.setColorAt(idx, capCol);
       }
     }
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     caps.instanceMatrix.needsUpdate = true; caps.instanceColor.needsUpdate = true;
-    capMat.opacity = 0.55 + kick * 0.3;
+    capMat.opacity = 0.45 + kick * 0.5 + midHit * 0.2;
 
     for (let i = 0; i < STAR_N; i++) {
       starPos[i * 3 + 2] += speed * dt * 1.3;
@@ -274,7 +274,7 @@ export function createVisual(canvas, audio) {
 
     // Pass 3a Glob morph — bass size, kick punch, mid palette, treble ripples
     // keep radius modest so centre-third stays dark for TikTok hook text
-    const targetGlob = 0.48 + bass * 0.22 + bassAtt * 0.12 + kick * 0.18;
+    const targetGlob = 0.42 + bass * 0.35 + bassAtt * 0.18 + kick * 0.32;
     globScale += (targetGlob - globScale) * 0.18;
     const posArr = globGeo.attributes.position.array;
     for (let i = 0; i < posArr.length; i += 3) {
@@ -285,7 +285,7 @@ export function createVisual(canvas, audio) {
         Math.sin(nx * 4.2 + t * 1.7 + bassTime) * (0.06 + mid * 0.08) +
         Math.sin(ny * 5.1 - t * 2.1 + midHit) * (0.05 + treble * 0.1) +
         Math.sin(nz * 3.4 + t * 1.3) * (0.04 + highHit * 0.08) +
-        kick * 0.07 * Math.sin(n * 9 + t * 8);
+        kick * 0.14 * Math.sin(n * 9 + t * 8) + bassHit * 0.08 * Math.sin(n * 5 + t * 4);
       const r = 1 + w;
       posArr[i] = nx * r; posArr[i + 1] = ny * r; posArr[i + 2] = nz * r;
     }
@@ -296,7 +296,7 @@ export function createVisual(canvas, audio) {
     glob.rotation.x = Math.sin(t * 0.4) * 0.25 + mid * 0.15;
     cosPalette(0.55 + palDrive * 0.5 + kick * 0.1, PAL_A, PAL_B, PAL_C, PAL_D, globCol);
     globMat.color.copy(globCol).multiplyScalar(0.55);
-    globMat.emissive.copy(globCol).multiplyScalar(0.12 + kick * 0.15);
+    globMat.emissive.copy(globCol).multiplyScalar(0.1 + kick * 0.35 + bassHit * 0.2);
     shellMat.color.copy(globCol);
     shellMat.opacity = 0.12 + mid * 0.12 + kick * 0.15;
     shell.rotation.y = -t * 0.55;
@@ -308,10 +308,10 @@ export function createVisual(canvas, audio) {
     camera.rotation.z = Math.sin(t * 0.15) * 0.35 + bassTime * 0.01 + mid * 0.08;
     camera.lookAt(0, 0, -20);
     camera.rotation.z += Math.sin(t * 0.15) * 0.35;
-    camera.fov = 72 - kick * 10; camera.updateProjectionMatrix();
-    const ks = 1 + kick * 0.08; root.scale.set(ks, ks, 1);
+    camera.fov = 72 - kick * 16; camera.updateProjectionMatrix();
+    const ks = 1 + kick * 0.14; root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
-    camLight.intensity = 30 + bass * 20;
+    camLight.intensity = 28 + bass * 35 + kick * 25;
     // glob tracks camera lightly — stays in centre-third for hook overlay
     glob.position.x = camera.position.x * 0.35;
     glob.position.y = camera.position.y * 0.35;
@@ -319,22 +319,22 @@ export function createVisual(canvas, audio) {
 
     // frame-rate independent trails: pow so large dt (low fps) shortens persistence
         // Pass 5a Kaleido — mid rotates, bassTime drifts, kick briefly bumps N
-    const targetN = 6 + Math.round(mid * 2) + (kick > 0.5 ? 2 : 0);
-    kaleidoN += (targetN - kaleidoN) * 0.12;
-    kaleidoOff += dt * (0.15 + mid * 0.55 + bassTime * 0.02) + kick * 0.08;
-    kaleido.uniforms.segments.value = Math.max(4, Math.min(10, kaleidoN));
+    const targetN = 6 + Math.round(mid * 3) + (kick > 0.45 ? 3 : 0) + (bassHit > 0.5 ? 1 : 0);
+    kaleidoN += (targetN - kaleidoN) * 0.22;
+    kaleidoOff += dt * (0.25 + mid * 0.9 + bassTime * 0.04) + kick * 0.22 + midHit * 0.1;
+    kaleido.uniforms.segments.value = Math.max(4, Math.min(12, kaleidoN));
     kaleido.uniforms.offset.value = kaleidoOff;
-    kaleido.uniforms.mixAmt.value = 0.75 + midAtt * 0.15;
+    kaleido.uniforms.mixAmt.value = 0.7 + midAtt * 0.2 + kick * 0.15;
 
     // 4d: during/after glitch, kill trails so edge tear can't smear into void
     if (kick > 0.4 || highHit > 0.35 || bassHit > 0.55) {
       glitchLeft = Math.max(glitchLeft, 10);
       afterCool = Math.max(afterCool, 14);
     }
-    let dampBase = 0.60 + Math.min(0.05, bass * 0.03);
-    if (afterCool > 0) { dampBase = Math.min(dampBase, 0.22); afterCool--; }
+    let dampBase = 0.42 + Math.min(0.06, bass * 0.04);
+    if (afterCool > 0) { dampBase = Math.min(dampBase, 0.15); afterCool--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = 0.40 + Math.min(0.10, bass * 0.08 + bassAtt * 0.05); // parked hard: 0.40–0.50
+    bloom.strength = 0.22 + Math.min(0.18, bass * 0.1 + kick * 0.12 + bassAtt * 0.06);
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
