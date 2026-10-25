@@ -7,9 +7,9 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// Pass 8a: solid InstancedMesh box gates + neon edge rims + Reflector floor; 7b violence (scale-pop/shake/bloom/Z) + dense gates; void clamp kept
+// Pass 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
 const W = 540, H = 960;
-const RINGS = 20, PER_RING = 8, SPACING = 3.2; // sparse fat pillars; flats beat ring density
+const RINGS = 24, PER_RING = 8, SPACING = 2.7; // 9a denser pillars // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
 const DEPTH = RINGS * SPACING;
 const BG = 0x020205;
@@ -43,7 +43,13 @@ export function createVisual(canvas, audio) {
   const geo = new THREE.CylinderGeometry(1, 1, 1, 6, 1);
   geo.rotateY(Math.PI / 6);
   geo.translate(0, 0.5, 0);
-  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x111122, flatShading: true });
+  // 9a concrete grain (tiny CanvasTexture, mobile-light)
+  const grainCv = document.createElement('canvas'); grainCv.width = grainCv.height = 128;
+  { const gx = grainCv.getContext('2d'); const id = gx.createImageData(128, 128);
+    for (let i = 0; i < id.data.length; i += 4) { const v = 150 + Math.random() * 90 - ((i >> 2) % 37 === 0 ? 60 : 0); id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+    gx.putImageData(id, 0, 0); }
+  const grainTex = new THREE.CanvasTexture(grainCv); grainTex.wrapS = grainTex.wrapT = THREE.RepeatWrapping; grainTex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: grainTex, roughnessMap: grainTex, emissive: 0x0a0a14, roughness: 0.9, metalness: 0.2, flatShading: true });
   const pillars = new THREE.InstancedMesh(geo, mat, COUNT);
   pillars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(pillars);
@@ -60,7 +66,7 @@ export function createVisual(canvas, audio) {
   root.add(caps);
 
   // Pass 6a — nested neon portal gates (hex frames → vanishing point)
-  const GATES = 32, GATE_SPACING = 1.25, GATE_DEPTH = GATES * GATE_SPACING;
+  const GATES = 44, GATE_SPACING = 1.0, GATE_DEPTH = GATES * GATE_SPACING;
   // Pass 8a — hex frames of thick boxes (solid StandardMaterial) + thin neon rim
   function hexFrame(r, th, dp) {
     const parts = [];
@@ -72,12 +78,17 @@ export function createVisual(canvas, audio) {
     }
     return mergeGeometries(parts);
   }
-  const gateGeo = hexFrame(0.93, 0.14, 0.35);
-  const gateMat = new THREE.MeshStandardMaterial({ color: 0x2a2433, roughness: 0.7, metalness: 0.15 });
+  const gateGeo = hexFrame(0.95, 0.2, 0.5); // 9a thicker stone
+  const gateMat = new THREE.MeshStandardMaterial({ color: 0x1a171e, map: grainTex, roughnessMap: grainTex, roughness: 0.9, metalness: 0.3 });
+  // 9a deep-tunnel neon backlight (behind gates) — bleeds through gaps, rims wet spec
+  const backLight = new THREE.SpotLight(0xff1a9c, 120, 60, 0.7, 0.6, 1.2);
+  backLight.position.set(0, 0, -40); backLight.target.position.set(0, 0, 3);
+  scene.add(backLight); scene.add(backLight.target);
+  const backDir = new THREE.DirectionalLight(0x2a6bff, 1.4); backDir.position.set(0, 0.4, -1); scene.add(backDir);
   const gates = new THREE.InstancedMesh(gateGeo, gateMat, GATES);
   gates.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(gates);
-  const rimGeo = hexFrame(0.86, 0.025, 0.37); // inner edge neon
+  const rimGeo = hexFrame(0.84, 0.03, 0.52); // inner edge neon
   const rimMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const rims = new THREE.InstancedMesh(rimGeo, rimMat, GATES);
   rims.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -85,14 +96,15 @@ export function createVisual(canvas, audio) {
   root.add(rims);
   // 8a Reflector floor (half res) + dark rough overlay for depth
   const floorRef = new Reflector(new THREE.PlaneGeometry(14, 120), {
-    clipBias: 0.003, textureWidth: Math.max(256, W >> 1), textureHeight: Math.max(256, H >> 1), color: 0x161020,
+    clipBias: 0.003, textureWidth: W, textureHeight: H, color: 0x6a5a80, // 9a full-res, bright tint so neon mirrors
   });
   floorRef.rotation.x = -Math.PI / 2; floorRef.position.set(0, -2.25, -55); root.add(floorRef);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 120), new THREE.MeshStandardMaterial({ color: 0x07050c, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 120), new THREE.MeshStandardMaterial({ color: 0x07050c, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false })); // 9a thin wet overlay
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, -2.2, -55); root.add(floor);
   const gateZ = new Float32Array(GATES);
   for (let g = 0; g < GATES; g++) gateZ[g] = -g * GATE_SPACING;
-  const MAG = new THREE.Color(0xff00cc), CYAN = new THREE.Color(0x00fff2);
+  const MAG = new THREE.Color(0xff00cc), CYAN = new THREE.Color(0x00fff2), HOTPINK = new THREE.Color(0xff2a8a), EBLUE = new THREE.Color(0x1a4dff);
+  const NEONS = [MAG, CYAN, HOTPINK, EBLUE];
   const gateCol = new THREE.Color();
   let gateLurch = 0;
 
@@ -195,7 +207,7 @@ export function createVisual(canvas, audio) {
   const KickFlash = {
     uniforms: {
       tDiffuse: { value: null },
-      mode: { value: 0 }, // 0 off, 1 invert, 2 magenta, 3 cyan, 4 rgb-split
+      mode: { value: 0 }, // 0 off, 1 invert, 2 magenta, 3 cyan, 4 rgb-split, 5 white, 6 hot pink, 7 red
       amt: { value: 0 },
     },
     vertexShader: /* glsl */`
@@ -215,6 +227,10 @@ export function createVisual(canvas, audio) {
           gl_FragColor = vec4(mix(c.rgb, vec3(1.0, 0.0, 0.8), amt), 1.0);
         } else if (mode < 3.5) {
           gl_FragColor = vec4(mix(c.rgb, vec3(0.15, 0.85, 1.0), amt) + vec3(0.25,0.0,0.35)*amt, 1.0);
+        } else if (mode > 6.5) {
+          gl_FragColor = vec4(mix(c.rgb, vec3(1.0, 0.05, 0.1), amt) * (1.0 + 0.6*amt), 1.0); // 9a red
+        } else if (mode > 5.5) {
+          gl_FragColor = vec4(mix(c.rgb, vec3(1.0, 0.25, 0.6), amt) * (1.0 + 0.6*amt), 1.0); // 9a hot pink
         } else if (mode > 4.5) {
           gl_FragColor = vec4(mix(c.rgb, vec3(1.0), amt) * (1.0 + amt), 1.0); // 7b white burst
         } else {
@@ -316,7 +332,7 @@ export function createVisual(canvas, audio) {
     const bassHit = audio.bassHit || 0, midHit = audio.midHit || 0, highHit = audio.highHit || 0;
     const bassTime = audio.bassTime || 0;
 
-    speed += ((12 + bass * 34 + kick * 26 + Math.min(6, bassTime * 0.02)) - speed) * 0.2; // 7a fly-through // 5b: snappier rhythm
+    speed += ((12 + bass * 34 + kick * 26 + Math.min(6, bassTime * 0.02)) - speed) * 0.45; // 9a harder snap // 7a fly-through // 5b: snappier rhythm
     scroll += speed * dt;
     const radius = 2.4 + bass * 0.85 + bassAtt * 0.5 + kick * 0.55;
     const thick = 0.95 + bass * 0.35 + bassHit * 0.28 + kick * 0.2;
@@ -372,7 +388,7 @@ export function createVisual(canvas, audio) {
       if (gateZ[g] > 5) gateZ[g] -= GATE_DEPTH;
       const z = gateZ[g];
       const depthT = (-z + 5) / GATE_DEPTH;
-      const rad = 1.6 + depthT * 3.6 + bass * 0.45 + bassAtt * 0.3; // 7a: near rings fill frame
+      const rad = 1.4 + depthT * 3.6 + bass * 0.45 + bassAtt * 0.3; // 7a: near rings fill frame
       const twist = g * 0.11 + depthT * 1.6 + t * 0.35 + bassTime * 0.18; // 7a per-ring twist + spiral
       pos.set(0, 0, z);
       q.setFromAxisAngle(zAxis, twist);
@@ -380,10 +396,10 @@ export function createVisual(canvas, audio) {
       m4.compose(pos, q, scl);
       gates.setMatrixAt(g, m4);
       rims.setMatrixAt(g, m4);
-      gateCol.copy(g % 2 === 0 ? MAG : CYAN);
+      gateCol.copy(NEONS[g % 4]);
       // 6e: near-camera gates dimmer so idle centre stays ≤120
       const near = Math.max(0, 1 - depthT);
-      gateCol.multiplyScalar(1.1 + kick * 1.2 + near * 0.3); // 7a hot MAG/CYAN
+      gateCol.multiplyScalar(1.3 + kick * 2.2 + near * 0.3); // 9a hotter on kick // 7a hot MAG/CYAN
       rims.setColorAt(g, gateCol);
     }
     gates.instanceMatrix.needsUpdate = true;
@@ -442,6 +458,7 @@ export function createVisual(canvas, audio) {
     const ks = 1 + kick * 0.14 + popS; root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
     camLight.intensity = 26 + bass * 35 + kick * 25;
+    backLight.intensity = 90 + bass * 120 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
     // glob tracks camera lightly — stays in centre-third for hook overlay
     glob.position.x = camera.position.x * 0.35;
     glob.position.y = camera.position.y * 0.35;
@@ -458,23 +475,23 @@ export function createVisual(canvas, audio) {
 
     // Kick flash / snatch — 1–3f, ≤3/s, from kick + bassAtt (not continuous bass)
     // 6e: fewer false opens that spiked idle ~185
-    const wantFlash = (kick > 0.68 || (bassAtt > 0.82 && peak > 0.65) || bassHit > 0.88);
-    if (wantFlash && (t - lastFlashT) > 0.45) {
+    const wantFlash = (kick > 0.62 || (bassAtt > 0.78 && peak > 0.6) || bassHit > 0.84); // 9a more kicks fire
+    if (wantFlash && (t - lastFlashT) > 0.34) {
       lastFlashT = t;
       flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
       flashMode = peak > 0.75 ? 1 : (kick > 0.6 ? (Math.random() > 0.5 ? 2 : 3) : 4);
       gateLurch = GATE_SPACING * 1.0; // gate lurch one step
       afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
-      popS = 0.15 + kick * 0.05; shakeA = 0.35; zPunch = 1.6; hueSnap = (hueSnap + 1) % 3;
-      flashMode = [2, 3, 5][hueSnap]; if (peak > 0.85) flashMode = 1; // 7b hue snap mag/cyan/white
+      popS = 0.22 + kick * 0.05; shakeA = 0.5; zPunch = 2.3; hueSnap = (hueSnap + 1) % 5;
+      flashMode = [2, 3, 5, 6, 7][hueSnap]; if (peak > 0.85) flashMode = 1; // 7b hue snap mag/cyan/white
     }
-    if (bassHit > 0.6 || kick > 0.5) { zPunch = Math.max(zPunch, 0.9 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.12 * kick); popS = Math.max(popS, 0.08 * kick); }
+    if (bassHit > 0.6 || kick > 0.5) { zPunch = Math.max(zPunch, 1.4 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.22 * kick); popS = Math.max(popS, 0.12 * kick); }
     const vd = Math.pow(0.78, Math.max(0.5, dt * 60));
     popS *= vd; shakeA *= vd; zPunch *= Math.pow(0.85, Math.max(0.5, dt * 60));
     if (flashLeft > 0) {
       kickFlash.uniforms.mode.value = flashMode;
-      kickFlash.uniforms.amt.value = Math.min(1.0, 0.95 + kick * 0.05); // 7b near-full burst
+      kickFlash.uniforms.amt.value = 1.0; // 7b near-full burst
       flashLeft--;
       dampBase_force = 0.05;
       if (flashLeft === 0) settleKill = Math.max(settleKill, 18); // 6d: snap pocket dark after hard cut
@@ -497,13 +514,13 @@ export function createVisual(canvas, audio) {
     // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = flashLeft > 0 ? 1.0 + kick * 0.2 : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.32) + Math.min(0.45, kick * 0.35 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
+    bloom.strength = flashLeft > 0 ? 1.5 + kick * 0.3 : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.32) + Math.min(0.45, kick * 0.35 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.36 : 0.40;
     voidGate.uniforms.radius.value = settleKill > 0 ? 0.46 : 0.42;
     scene.background.setHex(flashLeft > 0 ? BG : 0x000000); // blackout between hits
-    renderer.toneMappingExposure = flashLeft > 0 ? 2.2 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.72 : 0.82));
+    renderer.toneMappingExposure = flashLeft > 0 ? 2.8 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.72 : 0.82));
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
