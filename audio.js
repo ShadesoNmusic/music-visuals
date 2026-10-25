@@ -1,13 +1,20 @@
-// audio.js — real analyser (01010). Keep exports: audio { bass, mid, treble, beat, kick, bpm, load, update }.
-// Bass/mid/treble: smoothed 0..1. beat: true on kick onset frame. kick: 1→0 envelope. bpm: estimated or 0.
+// audio.js — Synesthesia-style signals (01010).
+// Keep: bass, mid, treble, beat, kick, bpm, peakHold, level, load, update
+// New: high, bassHit, midHit, highHit, bassAtt, midAtt, highAtt, bassTime, spectrum
+// hits = band − slowAvg (clamped 0..1); Att = attack/release envelopes; bassTime integrates bass for camera Z
 
 export const audio = {
-  bass: 0, mid: 0, treble: 0,
+  bass: 0, mid: 0, treble: 0, high: 0,
   beat: false,
   kick: 0,
-  peakHold: 0,   // max kick seen recently (~1s) for debug / playtest
-  level: 0,      // raw low-band energy 0..1 — if this stays ~0, analyser isn't getting audio
+  peakHold: 0,
+  level: 0,
   bpm: 0,
+  // Synesthesia-ish
+  bassHit: 0, midHit: 0, highHit: 0,
+  bassAtt: 0, midAtt: 0, highAtt: 0,
+  bassTime: 0,
+  spectrum: null, // Float32Array 0..1, length = fft/2 — for GPU DataTexture later
   element: null, ctx: null, analyser: null,
 
   async load(src) {
@@ -32,12 +39,13 @@ export const audio = {
     if (!this.analyser) {
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 2048;
-      this.analyser.smoothingTimeConstant = 0.55;
+      this.analyser.smoothingTimeConstant = 0.45;
       this.analyser.minDecibels = -90;
       this.analyser.maxDecibels = -10;
       this.analyser.connect(this.ctx.destination);
       this._f = new Uint8Array(this.analyser.frequencyBinCount);
       this._t = new Uint8Array(this.analyser.fftSize);
+      this.spectrum = new Float32Array(this.analyser.frequencyBinCount);
     }
 
     this._src = this.ctx.createMediaElementSource(el);
@@ -48,11 +56,16 @@ export const audio = {
     this._prevLow = null;
     this._last = 0;
     this._iv = [];
+    this._slow = { bass: 0, mid: 0, high: 0 };
     this.bpm = 0;
     this.kick = 0;
     this.peakHold = 0;
     this.level = 0;
     this.beat = false;
+    this.bassHit = this.midHit = this.highHit = 0;
+    this.bassAtt = this.midAtt = this.highAtt = 0;
+    this.bassTime = 0;
+    this.high = 0;
     return el;
   },
 
@@ -67,27 +80,53 @@ export const audio = {
     return s / ((b - a) * 255);
   },
 
+  // attack/release toward target (Synesthesia-style envelopes)
+  _env(cur, target, dt, atk, rel) {
+    const k = target > cur ? (1 - Math.exp(-dt / atk)) : (1 - Math.exp(-dt / rel));
+    return cur + (target - cur) * k;
+  },
+
   update(dt = 1 / 60) {
     this.beat = false;
-    // kick decays ~250ms (4/s); snappy for tunnel zoom
     this.kick = Math.max(0, this.kick - dt * 4);
-    this.peakHold = Math.max(this.kick, this.peakHold - dt * 2.5); // ~400ms hold — can dip between kicks at ~180 BPM
+    this.peakHold = Math.max(this.kick, this.peakHold - dt * 2.5);
     if (!this.analyser || !this.element || this.element.paused) return this;
 
     this.analyser.getByteFrequencyData(this._f);
     this.analyser.getByteTimeDomainData(this._t);
 
-    const lerp = (o, n, k) => o + (n - o) * k;
-    const sub = this._band(30, 150);
+    for (let i = 0; i < this._f.length; i++) this.spectrum[i] = this._f[i] / 255;
+
     const bassRaw = this._band(20, 250);
     const midRaw = this._band(250, 2000);
-    const trebleRaw = this._band(2000, 12000);
+    const trebleRaw = this._band(2000, 6000);
+    const highRaw = this._band(6000, 16000);
+    const sub = this._band(30, 150);
 
-    this.bass = Math.min(1, lerp(this.bass, bassRaw * 1.15, 0.55));
-    this.mid = Math.min(1, lerp(this.mid, midRaw, 0.4));
-    this.treble = Math.min(1, lerp(this.treble, trebleRaw, 0.4));
+    // fast bands (display)
+    this.bass = Math.min(1, this._env(this.bass, Math.min(1, bassRaw * 1.15), dt, 0.02, 0.12));
+    this.mid = Math.min(1, this._env(this.mid, midRaw, dt, 0.03, 0.15));
+    this.treble = Math.min(1, this._env(this.treble, trebleRaw, dt, 0.025, 0.12));
+    this.high = Math.min(1, this._env(this.high, highRaw, dt, 0.02, 0.1));
 
-    // Spectral flux on low bins (onset) + energy vs rolling mean
+    // slow averages for hit detection
+    this._slow.bass = this._env(this._slow.bass, this.bass, dt, 0.4, 0.4);
+    this._slow.mid = this._env(this._slow.mid, this.mid, dt, 0.4, 0.4);
+    this._slow.high = this._env(this._slow.high, this.high, dt, 0.35, 0.35);
+
+    this.bassHit = Math.min(1, Math.max(0, this.bass - this._slow.bass) * 3);
+    this.midHit = Math.min(1, Math.max(0, this.mid - this._slow.mid) * 3);
+    this.highHit = Math.min(1, Math.max(0, this.high - this._slow.high) * 3);
+
+    // attack/release driven by hits (for post: CA, glitch, bloom)
+    this.bassAtt = this._env(this.bassAtt, this.bassHit, dt, 0.01, 0.25);
+    this.midAtt = this._env(this.midAtt, this.midHit, dt, 0.015, 0.3);
+    this.highAtt = this._env(this.highAtt, this.highHit, dt, 0.01, 0.2);
+
+    // integrated bass → camera Z / tunnel scroll
+    this.bassTime += this.bass * dt * (1 + this.kick * 2);
+
+    // kick onset (unchanged core)
     const lowBins = 24;
     let flux = 0;
     if (this._prevLow) {
@@ -111,7 +150,6 @@ export const audio = {
     if (h.length > 43) h.shift();
     const avg = h.reduce((a, b) => a + b, 0) / h.length || 0;
 
-    // time-domain punch (helps soft-compressed tracks)
     let rms = 0;
     for (let i = 0; i < this._t.length; i++) {
       const v = (this._t[i] - 128) / 128;
@@ -124,7 +162,6 @@ export const audio = {
 
     const energyHit = sub > avg * 1.28 && sub > 0.18;
     const fluxHit = flux > fluxAvg * 1.6 + 0.02 && flux > 0.04;
-    // RMS helps on real devices; don't hard-require it (headless often has flat time-domain)
     const punch = rms > 0.08;
 
     if ((energyHit || fluxHit || (punch && sub > avg * 1.15 && sub > 0.15)) && now - this._last > 220) {
@@ -139,6 +176,7 @@ export const audio = {
       this.beat = true;
       this.kick = 1;
       this.peakHold = 1;
+      this.bassAtt = Math.max(this.bassAtt, 0.85);
       if (this._iv.length >= 4) {
         const s = [...this._iv].sort((a, b) => a - b);
         let bpm = 60000 / s[s.length >> 1];
