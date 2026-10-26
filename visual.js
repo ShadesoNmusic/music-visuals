@@ -488,10 +488,10 @@ export function createVisual(canvas, audio) {
     bloom.strength = flashLeft > 0 ? 1.5 + kick * 0.3 : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.3, kick * 0.35 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
-    voidGate.uniforms.cap.value = settleKill > 0 ? 0.36 : 0.40;
-    voidGate.uniforms.radius.value = settleKill > 0 ? 0.46 : 0.42;
+    voidGate.uniforms.cap.value = settleKill > 0 ? 0.36 : 0.05; // 11c: idle pocket hard-dark (11b neon read 136.7)
+    voidGate.uniforms.radius.value = 0.46; // 11c
     scene.background.setHex(flashLeft > 0 ? BG : 0x000000); // blackout between hits
-    renderer.toneMappingExposure = flashLeft > 0 ? 2.8 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.85 : 1.0));
+    renderer.toneMappingExposure = flashLeft > 0 ? 2.8 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.85 : 0.85));
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
