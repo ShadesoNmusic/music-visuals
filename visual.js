@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// Pass 11a: looks A concrete colonnade -> B neon spectrum beams -> C mandala spokes (instanced lerp crossfade); near-plane 1.0 + sightline clamp (min radial dist, size caps), onset-locked punch/flash. Was 10a: foot light-leak fix (neon lights high+deep, low idle) + hypnagogic morph colonnade<->mandala<->abstract spiral (~6s). Was 9c: solid opaque Box colonnade (one InstancedMesh, grey only), neon as lights only, half-res Reflector + wet plane floor in lower third; no afterimage/kaleido/additive. Was 9b: opaque mid-grey concrete mass, wet floor raised into view (Reflector half-res + shiny wet plane + neon strips), kaleido/afterimage cut for sharp stills; 9a kick violence + void clamp kept. Was 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
+// Pass 11b: looks A concrete colonnade -> B neon spectrum beams -> C mandala spokes (instanced lerp crossfade); near-plane 1.0 + sightline clamp (min radial dist, size caps), onset-locked punch/flash. Was 10a: foot light-leak fix (neon lights high+deep, low idle) + hypnagogic morph colonnade<->mandala<->abstract spiral (~6s). Was 9c: solid opaque Box colonnade (one InstancedMesh, grey only), neon as lights only, half-res Reflector + wet plane floor in lower third; no afterimage/kaleido/additive. Was 9b: opaque mid-grey concrete mass, wet floor raised into view (Reflector half-res + shiny wet plane + neon strips), kaleido/afterimage cut for sharp stills; 9a kick violence + void clamp kept. Was 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
 const W = 540, H = 960;
 const RINGS = 16, PER_RING = 5, SPACING = 3.0; // 9c solid colonnade // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -294,7 +294,7 @@ export function createVisual(canvas, audio) {
   const col = new THREE.Color(), capCol = new THREE.Color();
   const spec = () => audio.spectrum && audio.spectrum.length ? audio.spectrum : null;
 
-  let t = 0, speed = 10, scroll = 0, morphT = 0;
+  let fovSnap = 0; let t = 0, speed = 10, scroll = 0, morphT = 0;
   function frame(dt) {
     dt = Math.min(dt, 0.05);
     t += dt;
@@ -314,8 +314,8 @@ export function createVisual(canvas, audio) {
     // 10a morph clock: ~6s per layout, mid hits nudge forward
     morphT += dt / 6 + (audio.onset ? 0.06 : 0); // 11a onset nudges morph (bar feel)
     const mPh = morphT % 3, morphI = Math.floor(mPh);
-    const mf = Math.min(1, Math.max(0, (mPh - morphI - 0.45) / 0.55)); const morphF = mf * mf * (3 - 2 * mf);
-    root.rotation.y = Math.sin(t * 0.07) * 0.08;
+    const mf = Math.min(1, Math.max(0, (mPh - morphI - 0.6) / 0.4)); const morphF = mf * mf * (3 - 2 * mf); // 11b ~3.6s dwell, 2.4s morph
+    root.rotation.y = 0; // 11b no spin (fed morph jumble)
     // 9c solid colonnade: per ring [inner L, inner R, outer L, outer R, lintel]
     let idx = 0;
     gateLurch *= 0.6;
@@ -339,8 +339,9 @@ export function createVisual(canvas, audio) {
         const bx = [-2.3, 2.3, -3.4, 3.4, 0][k], bh = 1.2 + bnd * 3.4 + treble * 0.8;
         const B = k < 4 ? [bx, FLOOR_Y + bh / 2, 0.16, bh, 0.16, 0] : [0, CEIL_Y - 0.2, 4.6, 0.12, 0.16, 0];
         // 11a C: mandala/fractal spokes — two-level radial (spoke + sub-spoke), rotating per ring
-        const aC = k * 2 * Math.PI / PER_RING + r * 0.4 + t * 0.3, rC = 2.4 + (r % 3) * 0.45 + (sd > 0.5 ? 0.9 : 0);
-        const C = [Math.cos(aC) * rC, 0.6 + Math.sin(aC) * rC, 0.45 + (r % 2) * 0.3, 1.4 + (r % 3) * 0.5, 0.45, aC - Math.PI / 2 + Math.sin(t * 0.4 + r) * 0.3];
+        // 11b C: thin long radial spokes on a fixed ring around a dark centre (no per-ring spiral)
+        const aC = (k + (r % 2) * 0.5) * 2 * Math.PI / PER_RING + t * 0.12, lenC = 2.6 + (r % 2) * 0.8, rC = 2.6 + lenC / 2;
+        const C = [Math.cos(aC) * rC, 0.6 + Math.sin(aC) * rC, 0.14 + sd * 0.1, lenC, 0.18, aC - Math.PI / 2];
         const Aa = [d[0], d[1], d[2], d[3], d[4], wob * (k < 4 ? 0.2 : 0)];
         const L0 = morphI === 0 ? Aa : morphI === 1 ? B : C, L1 = morphI === 0 ? B : morphI === 1 ? C : Aa;
         const mx = (i) => L0[i] + (L1[i] - L0[i]) * morphF;
@@ -348,17 +349,23 @@ export function createVisual(canvas, audio) {
         let sx = mx(2), sy = mx(3), sz = mx(4);
         const wA = morphI === 0 ? 1 - morphF : morphI === 2 ? morphF : 0;
         const wB = morphI === 0 ? morphF : morphI === 1 ? 1 - morphF : 0;
-        const cap = (z > -6 ? 1.6 : 2.4) + wA * 4;
-        sx = Math.min(sx, cap); sy = Math.min(sy, cap + wB * 4); sz = Math.min(sz, cap);
+        const wN = 1 - wA; // neon weight (B+C)
+        const wC = 1 - wA - wB;
+        // 11b hard sightline: non-A geometry stays skinny; near-camera everything shrinks hard
+        const thin = 0.35 + wA * 1.2; sx = Math.min(sx, thin + (k === 4 ? wA * 4 + wB * 4.5 : 0)); sz = Math.min(sz, thin);
+        sy = Math.min(sy, 1.2 + wA * 4 + wB * 4 + wC * 2.4);
+        const nearF = Math.min(1, Math.max(0, (-z - 1) / 7)); // 0 at z>-1 -> 1 at z<-8
+        if (morphF > 0.02 && morphF < 0.98) { sx *= 0.25 + 0.75 * nearF; sy *= 0.35 + 0.65 * nearF; sz *= 0.25 + 0.75 * nearF; }
         let px = mx(0), py = mx(1) - 0.6;
-        const minR = 1.7 + 0.5 * Math.min(sx, sy) + (z > -3 ? 0.6 : 0);
+        const minR = 2.3 + 0.5 * Math.min(sx, sy) + (z > -4 ? 1.4 : 0) + (wC > 0.3 ? 0.8 : 0); // 11b wider hole
         const rr = Math.hypot(px, py) || 1e-3;
         if (rr < minR) { px *= minR / rr; py *= minR / rr; }
         pos.set(px, Math.max(FLOOR_Y + sy * 0.15, py + 0.6), z); q.setFromAxisAngle(zAxis, mx(5));
-        const conc = Math.max(0.001, 1 - wB); // concrete dissolves into beams
+        const conc = Math.max(0.001, wA); // 11b C is neon too; concrete dissolves into beams
         scl.set(sx * conc, sy * conc, sz * conc); m4.compose(pos, q, scl); pillars.setMatrixAt(idx, m4);
-        scl.set(sx * Math.max(0.001, wB), sy * Math.max(0.001, wB), sz * Math.max(0.001, wB)); m4.compose(pos, q, scl); beams.setMatrixAt(idx, m4);
-        beamCol.copy(NEONS[(k + r) % 4]).multiplyScalar(1.2 + bnd * 1.5 + kick * 1.5); beams.setColorAt(idx, beamCol);
+        const nF = Math.max(0.001, wN * nearF * nearF); // 11b neon fades out near lens (no bloom wash)
+        scl.set(sx * nF, sy * nF, sz * nF); m4.compose(pos, q, scl); beams.setMatrixAt(idx, m4);
+        beamCol.copy(NEONS[(wB > 0.5 ? (k + r) % 4 : (k % 2 ? 3 : 0))]).multiplyScalar((wB > 0.5 ? 1 : 0.3) * (0.8 + bnd * 0.8 + kick * 1.2)); beams.setColorAt(idx, beamCol);
         const v = 0.85 + seed[idx] * 0.3; col.setRGB(v, v * 0.98, v * (0.97 + seed[idx] * 0.06));
         pillars.setColorAt(idx, col);
       }
@@ -417,7 +424,7 @@ export function createVisual(canvas, audio) {
     camera.lookAt((Math.random() * 2 - 1) * shakeA * 2, 0.6 + (Math.random() * 2 - 1) * shakeA * 2, -40 + zPunch * 6); // lookAt snap
     camera.rotateX(-0.2); // 9c look-down: floor ≈ lower third
     camera.rotation.z += (Math.random() * 2 - 1) * shakeA * 0.1;
-    camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0); camera.updateProjectionMatrix();
+    camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0) - (fovSnap > 0 ? 14 : 0); if (fovSnap > 0) fovSnap--; camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.03 + popS * 0.35; // 11a small pop — no lens shove root.scale.set(ks, ks, 1);
     camLight.position.copy(camera.position);
     camLight.intensity = 26 + bass * 35 + kick * 25;
@@ -439,7 +446,7 @@ export function createVisual(canvas, audio) {
     // Kick flash / snatch — 1–3f, ≤3/s, from kick + bassAtt (not continuous bass)
     // 6e: fewer false opens that spiked idle ~185
     const onset = !!audio.onset; // 11a punches only on real onsets
-    if (onset) { popS = 0.22; shakeA = 0.45; zPunch = 1.6; gateLurch = GATE_SPACING * 0.5; afterCool = Math.max(afterCool, 18); }
+    if (onset) { popS = 0.3; shakeA = 0.8; zPunch = 1.8; gateLurch = GATE_SPACING * 0.5; afterCool = Math.max(afterCool, 18); }
     if (onset && (t - lastFlashT) > 0.3) { // flash ≤3.3/s
       lastFlashT = t;
       flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
@@ -447,7 +454,7 @@ export function createVisual(canvas, audio) {
       gateLurch = GATE_SPACING * 1.0; // gate lurch one step
       afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
-      popS = 0.22 + kick * 0.05; shakeA = 0.5; zPunch = 2.3; hueSnap = (hueSnap + 1) % 5;
+      popS = 0.32 + kick * 0.05; shakeA = 0.9; zPunch = 2.0; fovSnap = 3; // 11b harder onset, fov kick not lens shove hueSnap = (hueSnap + 1) % 5;
       flashMode = [2, 3, 5, 6, 7][hueSnap]; if (peak > 0.85) flashMode = 1; // 7b hue snap mag/cyan/white
     }
     if (false) { zPunch = Math.max(zPunch, 1.4 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.22 * kick); popS = Math.max(popS, 0.12 * kick); }
