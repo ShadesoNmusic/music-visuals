@@ -1,4 +1,4 @@
-// audio.js — Synesthesia-style signals (01010).
+// audio.js — Synesthesia-style signals (01010). Pass 11a: 40–80Hz kick band onset (×1.4 vs ~1s avg OR low flux), min abs 0.12, 150ms refractory, one-shot `onset`, kick decay dt*5.5, smoothing 0.28.
 // Keep: bass, mid, treble, beat, kick, bpm, peakHold, level, load, update
 // New: high, bassHit, midHit, highHit, bassAtt, midAtt, highAtt, bassTime, spectrum
 // hits = band − slowAvg (clamped 0..1); Att = attack/release envelopes; bassTime integrates bass for camera Z
@@ -6,6 +6,7 @@
 export const audio = {
   bass: 0, mid: 0, treble: 0, high: 0,
   beat: false,
+  onset: false, // 11a one-shot: true only on the onset update frame
   kick: 0,
   peakHold: 0,
   level: 0,
@@ -39,7 +40,7 @@ export const audio = {
     if (!this.analyser) {
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 2048;
-      this.analyser.smoothingTimeConstant = 0.45;
+      this.analyser.smoothingTimeConstant = 0.28;
       this.analyser.minDecibels = -90;
       this.analyser.maxDecibels = -10;
       this.analyser.connect(this.ctx.destination);
@@ -52,6 +53,7 @@ export const audio = {
     this._src.connect(this.analyser);
 
     this._hist = [];
+    this._kHist = [];
     this._fluxHist = [];
     this._prevLow = null;
     this._last = 0;
@@ -87,8 +89,8 @@ export const audio = {
   },
 
   update(dt = 1 / 60) {
-    this.beat = false;
-    this.kick = Math.max(0, this.kick - dt * 4);
+    this.beat = false; this.onset = false;
+    this.kick = Math.max(0, this.kick - dt * 5.5); // 11a short hard pulse
     this.peakHold = Math.max(this.kick, this.peakHold - dt * 2.5);
     if (!this.analyser || !this.element || this.element.paused) return this;
 
@@ -102,6 +104,7 @@ export const audio = {
     const trebleRaw = this._band(2000, 6000);
     const highRaw = this._band(6000, 16000);
     const sub = this._band(30, 150);
+    const kb = this._band(40, 80);
 
     // fast bands (display)
     this.bass = Math.min(1, this._env(this.bass, Math.min(1, bassRaw * 1.15), dt, 0.02, 0.12));
@@ -161,11 +164,14 @@ export const audio = {
     const now = performance.now();
     this.level = sub;
 
-    const energyHit = sub > avg * 1.28 && sub > 0.18;
-    const fluxHit = flux > fluxAvg * 1.6 + 0.02 && flux > 0.04;
+    const kh = this._kHist; kh.push(kb); if (kh.length > 60) kh.shift(); // ~1s
+    const kAvg = kh.reduce((a, b) => a + b, 0) / kh.length || 0;
+    const kickHit = kh.length >= 10 && kb > kAvg * 1.4 && kb > 0.12;
+    const energyHit = kickHit || (sub > avg * 1.35 && sub > 0.2);
+    const fluxHit = flux > fluxAvg * 1.8 + 0.025 && flux > 0.05;
     const punch = rms > 0.08;
 
-    if ((energyHit || fluxHit || (punch && sub > avg * 1.15 && sub > 0.15)) && now - this._last > 220) {
+    if ((energyHit || fluxHit) && now - this._last >= 150) {
       if (this._last) {
         const iv = now - this._last;
         if (iv > 250 && iv < 1500) {
@@ -174,7 +180,7 @@ export const audio = {
         }
       }
       this._last = now;
-      this.beat = true;
+      this.beat = true; this.onset = true;
       this.kick = 1;
       this.peakHold = 1;
       this.bassAtt = Math.max(this.bassAtt, 0.85);
