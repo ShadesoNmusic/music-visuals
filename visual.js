@@ -277,7 +277,7 @@ export function createVisual(canvas, audio) {
         vec4 c = texture2D(tDiffuse, vUv);
         vec2 d = vUv - 0.5; d.x *= aspect;
         float g = 1.0 - smoothstep(radius * 0.85, radius, length(d)); // 6e: harder pocket edge
-        float useCap = mix(cap, 0.92, open); // snatch may punch; never fully unclamp
+        float useCap = mix(cap, 0.70, open); // snatch may punch; never fully unclamp
         float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
         float k = l > useCap ? useCap / l : 1.0;
         c.rgb *= mix(1.0, k * 0.90, g); // clamp + darken in pocket
@@ -485,10 +485,10 @@ export function createVisual(canvas, audio) {
     // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = flashLeft > 0 ? 1.5 + kick * 0.3 : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.3, kick * 0.35 + (kick > 0.3 ? bass * 0.1 + bassAtt * 0.08 : bass * 0.03));
+    bloom.strength = flashLeft > 0 ? 1.5 + kick * 0.3 : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
-    voidGate.uniforms.cap.value = settleKill > 0 ? 0.36 : 0.05; // 11c: idle pocket hard-dark (11b neon read 136.7)
+    voidGate.uniforms.cap.value = settleKill > 0 ? 0.30 : 0.05; // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.46; // 11c
     scene.background.setHex(flashLeft > 0 ? BG : 0x000000); // blackout between hits
     renderer.toneMappingExposure = flashLeft > 0 ? 2.8 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.85 : 0.85));
