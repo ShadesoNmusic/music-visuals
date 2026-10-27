@@ -86,7 +86,7 @@ export function createVisual(canvas, audio) {
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: `uniform float uT, uA, uPow, uHit; varying vec2 vUv;
       float DE(vec3 p, out float trap){ vec3 z = p; float dr = 1.0, r = 0.0; trap = 1e9;
-        for (int i = 0; i < 6; i++) { r = length(z); if (r > 2.0) break;
+        for (int i = 0; i < 8; i++) { r = length(z); if (r > 2.0) break;
           float th = acos(clamp(z.z / r, -1.0, 1.0)) * uPow, ph = atan(z.y, z.x) * uPow;
           dr = pow(r, uPow - 1.0) * uPow * dr + 1.0; float zr = pow(r, uPow);
           z = zr * vec3(sin(th) * cos(ph), sin(ph) * sin(th), cos(th)) + p; trap = min(trap, length(z.xy)); }
@@ -217,6 +217,15 @@ export function createVisual(canvas, audio) {
       void main(){
         vec4 c = texture2D(tDiffuse, vUv);
         if (amt < 0.001 || mode < 0.5) { gl_FragColor = c; return; }
+        if (mode > 1.5 && (mode < 3.5 || mode > 4.5)) { // 12 punch-ref: flat blown-out radial colour field snatch
+          vec2 d = vUv - 0.5; d.x *= 0.5625; float r = clamp(length(d) * 1.9, 0.0, 1.0);
+          vec3 f = mode > 6.5 ? mix(vec3(1.0, 0.95, 0.2), vec3(1.0, 0.05, 0.0), r)
+                 : mode > 5.5 ? mix(vec3(1.0, 0.9, 1.0), vec3(1.0, 0.1, 0.55), r)
+                 : mode > 4.5 ? mix(vec3(1.0), vec3(0.85, 0.9, 1.0), r)
+                 : mode > 2.5 ? mix(vec3(0.85, 1.0, 1.0), vec3(0.0, 0.75, 1.0), r)
+                 : mix(vec3(1.0, 0.8, 1.0), vec3(0.9, 0.0, 0.8), r);
+          float lum = dot(c.rgb, vec3(0.333));
+          gl_FragColor = vec4(mix(c.rgb, f * (1.3 + lum * 0.8), amt * 0.94), 1.0); return; }
         if (mode < 1.5) {
           gl_FragColor = vec4(mix(c.rgb, 1.0 - c.rgb, amt), 1.0);
         } else if (mode < 2.5) {
@@ -396,7 +405,7 @@ export function createVisual(canvas, audio) {
       }
     }
     { const wCg = morphI === 1 ? morphF : morphI === 2 ? 1 - morphF : 0; fracHit = Math.max(fracHit * 0.85, audio.onset ? 1 : 0);
-      fracMat.uniforms.uA.value = wCg * 0.9; fracMat.uniforms.uT.value = t + bassTime * 0.05; fracMat.uniforms.uHit.value = fracHit;
+      fracMat.uniforms.uA.value = Math.max(wCg, 0.25 * (1 - (morphI === 0 ? 1 - morphF : morphI === 2 ? morphF : 0))) * 0.95 /* denser neon baseline under B too */; fracMat.uniforms.uT.value = t + bassTime * 0.05; fracMat.uniforms.uHit.value = fracHit;
       fracMat.uniforms.uPow.value = 7.0 + Math.sin(t * 0.2) * 1.0 + bass * 0.6; frac.visible = wCg > 0.01; }
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     beams.instanceMatrix.needsUpdate = true; beams.instanceColor.needsUpdate = true;
@@ -454,6 +463,7 @@ export function createVisual(canvas, audio) {
     camera.rotation.z += (Math.random() * 2 - 1) * shakeA * 0.1;
     camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0) - (fovSnap > 0 ? 14 : 0); if (fovSnap > 0) fovSnap--; camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.03 + popS * 0.35; // 11a small pop — no lens shove root.scale.set(ks, ks, 1);
+    { const tp = 1 + bass * 0.12 + popS * 0.45; root.scale.set(tp, tp, 1); } // 12 punch-ref: tunnel pulse on sub (outward only)
     camLight.position.copy(camera.position);
     camLight.intensity = 26 + bass * 35 + kick * 25;
     backLight.intensity = 25 + bass * 30 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
@@ -474,7 +484,7 @@ export function createVisual(canvas, audio) {
     // Kick flash / snatch — 1–3f, ≤3/s, from kick + bassAtt (not continuous bass)
     // 6e: fewer false opens that spiked idle ~185
     const onset = !!audio.onset; // 11a punches only on real onsets
-    if (onset) { popS = 0.3; shakeA = 0.8; zPunch = 1.8; gateLurch = GATE_SPACING * 0.5; afterCool = Math.max(afterCool, 18); }
+    if (onset) { popS = 0.3; shakeA = 0.3; zPunch = 1.8; gateLurch = GATE_SPACING * 0.5; afterCool = Math.max(afterCool, 18); }
     if (onset && (t - lastFlashT) > 0.3) { // flash ≤3.3/s
       lastFlashT = t;
       flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
@@ -482,7 +492,7 @@ export function createVisual(canvas, audio) {
       gateLurch = GATE_SPACING * 1.0; // gate lurch one step
       afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
-      popS = 0.32 + kick * 0.05; shakeA = 0.9; zPunch = 2.0; fovSnap = 3; // 11b harder onset, fov kick not lens shove hueSnap = (hueSnap + 1) % 5;
+      popS = 0.32 + kick * 0.05; shakeA = 0.3; zPunch = 2.0; fovSnap = 3; // 11b harder onset, fov kick not lens shove hueSnap = (hueSnap + 1) % 5;
       flashMode = [2, 3, 5, 6, 7][hueSnap]; if (peak > 0.85) flashMode = 1; // 7b hue snap mag/cyan/white
     }
     if (false) { zPunch = Math.max(zPunch, 1.4 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.22 * kick); popS = Math.max(popS, 0.12 * kick); }
