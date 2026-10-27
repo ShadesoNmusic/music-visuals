@@ -35,7 +35,7 @@ export function createVisual(canvas, audio) {
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
 
-  scene.add(new THREE.AmbientLight(0xd8d4e0, 1.1));
+  scene.add(new THREE.AmbientLight(0xd8d4e0, 1.5) /* 12e mid floor */);
   const camLight = new THREE.PointLight(0xffffff, 40, 30, 1.6);
   scene.add(camLight);
 
@@ -233,7 +233,7 @@ export function createVisual(canvas, audio) {
                  : mode > 2.5 ? mix(vec3(0.85, 1.0, 1.0), vec3(0.0, 0.75, 1.0), r)
                  : mix(vec3(1.0, 0.8, 1.0), vec3(0.9, 0.0, 0.8), r);
           float lum = dot(c.rgb, vec3(0.333));
-          gl_FragColor = vec4(mix(c.rgb, f * (1.3 + lum * 0.8), amt * 0.94), 1.0); return; }
+          gl_FragColor = vec4(mix(c.rgb, max(f, f * (1.3 + lum * 0.8)), amt * 0.94), 1.0); return; } /* 12e: snatch shows colour field even over black */
         if (mode < 1.5) {
           gl_FragColor = vec4(mix(c.rgb, 1.0 - c.rgb, amt), 1.0);
         } else if (mode < 2.5) {
@@ -308,7 +308,7 @@ export function createVisual(canvas, audio) {
   let glitchLeft = 0, afterCool = 0, settleKill = 0;
   // 6b: radial void gate + centre luma clamp (LAST pass) — caps pocket ≤120/255 outside snatch
   const VoidGate = {
-    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, radius: { value: 0.46 }, aspect: { value: W / H }, open: { value: 0 } },
+    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, radius: { value: 0.30 }, aspect: { value: W / H }, open: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec2 vUv;
       void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -477,8 +477,8 @@ export function createVisual(canvas, audio) {
     const ks = 1 + kick * 0.03 + popS * 0.35; // 11a small pop — no lens shove root.scale.set(ks, ks, 1);
     { const tp = 1 + bass * 0.38 + (audio.sub || 0) * 0.2 + popS * 1.4; /* 12a: readable outward pulse */ root.scale.set(tp, tp, 1); } // 12 punch-ref: tunnel pulse on sub (outward only)
     camLight.position.copy(camera.position);
-    camLight.intensity = 26 + bass * 35 + kick * 25;
-    backLight.intensity = 25 + bass * 30 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
+    camLight.intensity = 38 + bass * 35 + kick * 25;
+    backLight.intensity = 45 + bass * 30 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
     // glob tracks camera lightly — stays in centre-third for hook overlay
     glob.position.x = camera.position.x * 0.35;
     glob.position.y = camera.position.y * 0.35;
@@ -511,6 +511,7 @@ export function createVisual(canvas, audio) {
     if (false) { zPunch = Math.max(zPunch, 1.4 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.22 * kick); popS = Math.max(popS, 0.12 * kick); }
     const vd = Math.pow(0.78, Math.max(0.5, dt * 60));
     popS *= vd; shakeA *= vd; zPunch *= Math.pow(0.85, Math.max(0.5, dt * 60));
+    const snatching = flashLeft > 0; // 12e: open decided before decrement
     if (flashLeft > 0) {
       kickFlash.uniforms.mode.value = flashMode;
       kickFlash.uniforms.amt.value = 1.0; // 7b near-full burst
@@ -537,12 +538,12 @@ export function createVisual(canvas, audio) {
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = flashLeft > 0 ? 3.0 + kick * 0.6 /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
-    flashLeft = Math.max(0, flashLeft | 0); voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
+    flashLeft = Math.max(0, flashLeft | 0); voidGate.uniforms.open.value = snatching ? 1 : 0; /* 12e */ // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045; // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
-    voidGate.uniforms.radius.value = 0.46; // 11c
+    voidGate.uniforms.radius.value = 0.30; // 12e: centre-third pocket only, walls unclamped
     scene.background.setHex(BG); // 12d: no blackout between hits
-    renderer.toneMappingExposure = flashLeft > 0 ? 2.8 : (settleKill > 0 ? 0.80 : 0.95) /* 12d: keep mid readable */;
+    renderer.toneMappingExposure = snatching ? 2.8 : (settleKill > 0 ? 0.85 : 1.0) /* 12d: keep mid readable */;
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
