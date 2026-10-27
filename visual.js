@@ -559,7 +559,7 @@ export function createVisual(canvas, audio) {
     { // 12j: independent mid path — energy-driven pocket cap + fill; idle (low energy) stays 0.045/fill 0
       const e = Math.min(0.6, Math.max(0, (bass + mid) * 0.7 - 0.08)); // 12k: eased
       midFill = (settleKill > 0 || snatching) ? 0 : midFill + (e - midFill) * 0.1; // 12k: settle/snatch hard 0, no decay tail
-      voidGate.uniforms.fill.value = midFill; { const idleNow = settleKill <= 0 && !snatching && e < 0.05; voidGate.uniforms.centreCeil.value = idleNow ? 0.05 : (settleKill > 0 ? 1.0 : 0.16); } /* 12p: idle centre 0.05, mid centre 0.16 linear */ voidGate.uniforms.wallLift.value = settleKill > 0 ? 0.2 : 0.35;
+      voidGate.uniforms.fill.value = midFill; { const idleNow = settleKill <= 0 && !snatching && e < 0.05; voidGate.uniforms.centreCeil.value = idleNow ? 0.05 : 1.0; } /* 12p: IDLE-ONLY centre ceil 0.05; mid/settle off (1.0) — mid fill path untouched */ voidGate.uniforms.wallLift.value = settleKill > 0 ? 0.2 : 0.35;
     }
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045 + 0.06 * midFill; voidGate.uniforms.uCeil.value = settleKill > 0 ? 0.30 : 0.42; kickFlash.uniforms.uCeil.value = settleKill > 0 ? 0.30 : 0.42; // 12k // 12j: mid cap up to 0.12 linear // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.35;  // 12i: ceiling ~117/255 (snatch is after gate in KickFlash) // 12h: wider pocket // 12e: centre-third pocket only, walls unclamped
