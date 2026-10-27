@@ -550,12 +550,17 @@ export function createVisual(canvas, audio) {
     bloom.strength = flashLeft > 0 ? 3.0 + kick * 0.6 /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
     flashLeft = Math.max(0, flashLeft | 0); voidGate.uniforms.open.value = 0; /* 12f: never open; KickFlash is after gate */ // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
-    { // 12j: independent mid path — energy-driven pocket cap + fill; idle (low energy) stays 0.045/fill 0
-      const e = Math.min(0.6, Math.max(0, (bass + mid) * 0.7 - 0.08)); // 12k: eased
-      midFill = (settleKill > 0 || snatching) ? 0 : midFill + (e - midFill) * 0.1; // 12k: settle/snatch hard 0, no decay tail
-      voidGate.uniforms.fill.value = midFill; voidGate.uniforms.wallLift.value = settleKill > 0 ? 0.2 : 0.35;
+    { // 12m: idle/settle = 12f path (no lift, no fill); mid-only gentle lift
+      const e = Math.min(0.6, Math.max(0, (bass + mid) * 0.7 - 0.08));
+      const quiet = settleKill > 0 || snatching || e < 0.05;
+      midFill = quiet ? 0 : midFill + (e - midFill) * 0.1;
+      const mg = Math.min(1, midFill / 0.3); // 0 idle -> 1 mid
+      voidGate.uniforms.fill.value = midFill * 0.6;
+      voidGate.uniforms.wallLift.value = quiet ? 0 : 0.2 * mg;
+      voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045 + 0.04 * midFill;
+      const ceil = settleKill > 0 ? 0.30 : 0.22 + 0.16 * mg; // idle hard ceiling ~56/255, mid ~97/255
+      voidGate.uniforms.uCeil.value = ceil; kickFlash.uniforms.uCeil.value = ceil;
     }
-    voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045 + 0.06 * midFill; voidGate.uniforms.uCeil.value = settleKill > 0 ? 0.30 : 0.42; kickFlash.uniforms.uCeil.value = settleKill > 0 ? 0.30 : 0.42; // 12k // 12j: mid cap up to 0.12 linear // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.35;  // 12i: ceiling ~117/255 (snatch is after gate in KickFlash) // 12h: wider pocket // 12e: centre-third pocket only, walls unclamped
     scene.background.setHex(BG); // 12d: no blackout between hits
     renderer.toneMappingExposure = snatching ? 2.8 : (settleKill > 0 ? 0.9 : 1.05) /* 12d: keep mid readable */;
