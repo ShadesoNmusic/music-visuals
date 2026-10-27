@@ -257,7 +257,7 @@ export function createVisual(canvas, audio) {
   };
   const kickFlash = new ShaderPass(KickFlash); // 12f: added AFTER voidGate (last pass)
   let popS = 0, shakeA = 0, zPunch = 0, hueSnap = 0; // 7b beat violence
-  let flashLeft = 0, flashMode = 0, lastFlashT = -1, dampBase_force = 0;
+  let midFill = 0; let flashLeft = 0, flashMode = 0, lastFlashT = -1, dampBase_force = 0;
 
       // Pass 4c — edge-biased RGB/block tear; centre-third (hook/void) stays clean
   const EdgeGlitch = {
@@ -307,12 +307,12 @@ export function createVisual(canvas, audio) {
   let glitchLeft = 0, afterCool = 0, settleKill = 0;
   // 6b: radial void gate + centre luma clamp (LAST pass) — caps pocket ≤120/255 outside snatch
   const VoidGate = {
-    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, uCeil: { value: 0.46 }, radius: { value: 0.30 }, aspect: { value: W / H }, open: { value: 0 } },
+    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, uCeil: { value: 0.46 }, fill: { value: 0 }, radius: { value: 0.30 }, aspect: { value: W / H }, open: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec2 vUv;
       void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: /* glsl */`
-      uniform sampler2D tDiffuse; uniform float cap; uniform float radius; uniform float aspect; uniform float open; uniform float uCeil;
+      uniform sampler2D tDiffuse; uniform float cap; uniform float radius; uniform float aspect; uniform float open; uniform float uCeil; uniform float fill;
       varying vec2 vUv;
       void main(){
         vec4 c = texture2D(tDiffuse, vUv);
@@ -324,7 +324,11 @@ export function createVisual(canvas, audio) {
         float useCap = mix(cap, 0.45, open);
         float m = max(max(c.r, c.g), c.b); // 12i: per-channel max, not luminance (saturated neon slipped past luma cap)
         float k = m > useCap ? useCap / m : 1.0;
-        c.rgb *= mix(1.0, k * 0.90, g); // clamp + darken in pocket
+        c.rgb *= mix(1.0, k * mix(0.90, 1.0, fill), g); // clamp + darken in pocket
+        // 12j: no tone-map/sRGB in this chain -> linear output reads near-black. Encode to sRGB-ish (gamma) by fill:
+        // idle fill=0 keeps 12i behaviour exactly; mid fill>0 lifts structure everywhere incl. centre.
+        c.rgb = mix(c.rgb, pow(max(c.rgb, 0.0), vec3(1.0 / 2.2)), fill);
+        c.rgb += vec3(0.035, 0.03, 0.045) * fill * (1.0 - g * 0.5); // faint fill floor so mid is never a black disk
         // 12i: whole-frame soft ceiling — compress (never zero) so mid stays readable but <= ~120/255
         float m2 = max(max(c.r, c.g), c.b);
         if (m2 > uCeil) c.rgb *= uCeil / m2; // hue-preserving cap, never black
@@ -546,7 +550,12 @@ export function createVisual(canvas, audio) {
     bloom.strength = flashLeft > 0 ? 3.0 + kick * 0.6 /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
     flashLeft = Math.max(0, flashLeft | 0); voidGate.uniforms.open.value = 0; /* 12f: never open; KickFlash is after gate */ // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
-    voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045; // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
+    { // 12j: independent mid path — energy-driven pocket cap + fill; idle (low energy) stays 0.045/fill 0
+      const e = Math.min(1, Math.max(0, (bass + mid) * 0.9 - 0.08));
+      midFill += ((settleKill > 0 ? 0 : e) - midFill) * 0.15;
+      voidGate.uniforms.fill.value = midFill;
+    }
+    voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045 + 0.075 * midFill; // 12j: mid cap up to 0.12 linear // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.35; voidGate.uniforms.uCeil.value = 0.46; // 12i: ceiling ~117/255 (snatch is after gate in KickFlash) // 12h: wider pocket // 12e: centre-third pocket only, walls unclamped
     scene.background.setHex(BG); // 12d: no blackout between hits
     renderer.toneMappingExposure = snatching ? 2.8 : (settleKill > 0 ? 0.9 : 1.05) /* 12d: keep mid readable */;
