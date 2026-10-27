@@ -30,7 +30,7 @@ export function createVisual(canvas, audio) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG);
-  scene.fog = new THREE.FogExp2(BG, 0.03); // 5b: less fog wash
+  scene.fog = new THREE.FogExp2(BG, 0.042); // 12: deeper depth fog
   const camera = new THREE.PerspectiveCamera(72, W / H, 1.0, 200); // 11a near clip — slabs clip before filling lens
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
@@ -48,13 +48,14 @@ export function createVisual(canvas, audio) {
   // Pass 9c — ONE opaque InstancedMesh of solid concrete boxes: colonnade rings (2 inner + 2 outer pillars + lintel)
   const FLOOR_Y = -1.3, CEIL_Y = 3.4;
   const geo = new THREE.BoxGeometry(1, 1, 1);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x9a94a8, map: grainTex, roughnessMap: grainTex, roughness: 0.92, metalness: 0.08, emissive: 0x16141c, flatShading: true, transparent: false, opacity: 1 });
+  grainTex.repeat.set(2, 3); // 12: finer concrete aggregate
+  const mat = new THREE.MeshPhysicalMaterial({ color: 0x8e889c, map: grainTex, roughnessMap: grainTex, bumpMap: grainTex, bumpScale: 0.6, roughness: 0.88, metalness: 0.04, clearcoat: 0.18, clearcoatRoughness: 0.55, emissive: 0x0c0a12, flatShading: true }); // 12 (sbcode roughness/metalness): grain bump + damp clearcoat sheen
   const pillars = new THREE.InstancedMesh(geo, mat, COUNT);
   pillars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(pillars);
   const gateMat = mat;
   // 11a neon beam set (opaque MeshBasic, no additive) — visible only in morph phase B
-  const beams = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff }), COUNT);
+  const beams = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }) /* 12: HDR neon so bloom bites */, COUNT);
   beams.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   beams.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(COUNT * 3), 3);
   root.add(beams);
@@ -76,9 +77,33 @@ export function createVisual(canvas, audio) {
     clipBias: 0.003, textureWidth: W >> 1, textureHeight: H >> 1, color: 0x9a90b0,
   });
   floorRef.rotation.x = -Math.PI / 2; floorRef.position.set(0, FLOOR_Y, -45); scene.add(floorRef);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 100), new THREE.MeshStandardMaterial({ color: 0x121018, roughness: 0.12, metalness: 0.85, transparent: true, opacity: 0.55, depthWrite: false }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(14, 100), new THREE.MeshStandardMaterial({ color: 0x0e0c14, map: grainTex, roughnessMap: grainTex, roughness: 0.35, metalness: 0.6, transparent: true, opacity: 0.42 /* 12 (Mancini wet-ground): rough-scaled wetness, mirror reads through puddles */, depthWrite: false }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, FLOOR_Y + 0.01, -45); scene.add(floor);
 
+  // 12 C: Mandelbulb raymarch backdrop (DE adapted from MIT matt-k-wong/WebGL-Mandelbulb), fades in with phase C
+  const fracMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: false,
+    uniforms: { uT: { value: 0 }, uA: { value: 0 }, uPow: { value: 8 }, uHit: { value: 0 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `uniform float uT, uA, uPow, uHit; varying vec2 vUv;
+      float DE(vec3 p, out float trap){ vec3 z = p; float dr = 1.0, r = 0.0; trap = 1e9;
+        for (int i = 0; i < 6; i++) { r = length(z); if (r > 2.0) break;
+          float th = acos(clamp(z.z / r, -1.0, 1.0)) * uPow, ph = atan(z.y, z.x) * uPow;
+          dr = pow(r, uPow - 1.0) * uPow * dr + 1.0; float zr = pow(r, uPow);
+          z = zr * vec3(sin(th) * cos(ph), sin(ph) * sin(th), cos(th)) + p; trap = min(trap, length(z.xy)); }
+        return 0.5 * log(r) * r / dr; }
+      void main(){ if (uA < 0.01) discard; vec2 uv = (vUv - 0.5) * vec2(1.6, 2.84);
+        float c = cos(uT * 0.15), s = sin(uT * 0.15);
+        vec3 ro = vec3(0.0, 0.0, 1.55 - uHit * 0.25), rd = normalize(vec3(uv, -1.4));
+        ro.xz = mat2(c, -s, s, c) * ro.xz; rd.xz = mat2(c, -s, s, c) * rd.xz;
+        float d = 0.0, tr = 0.0, g = 0.0; int hit = 0;
+        for (int i = 0; i < 56; i++) { float h = DE(ro + rd * d, tr); g += 0.012 / (0.02 + h);
+          if (h < 0.0015) { hit = 1; break; } d += h; if (d > 4.0) break; }
+        vec3 neon = mix(vec3(1.0, 0.0, 0.8), vec3(0.0, 1.0, 0.95), clamp(tr * 1.4, 0.0, 1.0));
+        vec3 col = hit == 1 ? neon * (0.35 + 0.65 * exp(-d)) : neon * g * 0.05;
+        gl_FragColor = vec4(col * (1.0 + uHit * 1.5), uA * (hit == 1 ? 1.0 : clamp(g * 0.05, 0.0, 0.8))); }` });
+  const frac = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), fracMat); frac.renderOrder = -1;
+  camera.add(frac); frac.position.set(0, 0, -30); frac.scale.set(2 * 30 * Math.tan(36 * Math.PI / 180) * W / H * 1.1, 2 * 30 * Math.tan(36 * Math.PI / 180) * 1.1, 1); scene.add(camera);
+  let fracHit = 0;
   const ringZ = new Float32Array(RINGS);
   const ringPhase = new Float32Array(RINGS);
   const seed = new Float32Array(COUNT);
@@ -303,7 +328,7 @@ export function createVisual(canvas, audio) {
     const bassHit = audio.bassHit || 0, midHit = audio.midHit || 0, highHit = audio.highHit || 0;
     const bassTime = audio.bassTime || 0;
 
-    speed += ((12 + bass * 34 + kick * 26 + Math.min(6, bassTime * 0.02)) - speed) * 0.45; // 9a harder snap // 7a fly-through // 5b: snappier rhythm
+    speed += ((11 + bass * 42 + kick * 30 + Math.min(6, bassTime * 0.02)) - speed) * 0.45; // 9a harder snap // 7a fly-through // 5b: snappier rhythm
     scroll += speed * dt;
     const radius = 2.4 + bass * 0.85 + bassAtt * 0.5 + kick * 0.55;
     const thick = 1.25 + bass * 0.35 + bassHit * 0.28 + kick * 0.2;
@@ -365,11 +390,14 @@ export function createVisual(canvas, audio) {
         scl.set(sx * conc, sy * conc, sz * conc); m4.compose(pos, q, scl); pillars.setMatrixAt(idx, m4);
         const nF = Math.max(0.001, wN * nearF * nearF); // 11b neon fades out near lens (no bloom wash)
         scl.set(sx * nF, sy * nF, sz * nF); m4.compose(pos, q, scl); beams.setMatrixAt(idx, m4);
-        beamCol.copy(NEONS[(wB > 0.5 ? (k + r) % 4 : (k % 2 ? 3 : 0))]).multiplyScalar((wB > 0.5 ? 1 : 0.3) * (0.8 + bnd * 0.8 + kick * 1.2)); beams.setColorAt(idx, beamCol);
+        beamCol.copy(NEONS[(wB > 0.5 ? (k + r) % 4 : (k % 2 ? 3 : 0))]).multiplyScalar((wB > 0.5 ? 1.6 : 0.6) * (0.8 + bnd * 1.0 + kick * 2.0)) /* 12: brighter HDR neon; VoidGate still caps pocket */; beams.setColorAt(idx, beamCol);
         const v = 0.85 + seed[idx] * 0.3; col.setRGB(v, v * 0.98, v * (0.97 + seed[idx] * 0.06));
         pillars.setColorAt(idx, col);
       }
     }
+    { const wCg = morphI === 1 ? morphF : morphI === 2 ? 1 - morphF : 0; fracHit = Math.max(fracHit * 0.85, audio.onset ? 1 : 0);
+      fracMat.uniforms.uA.value = wCg * 0.9; fracMat.uniforms.uT.value = t + bassTime * 0.05; fracMat.uniforms.uHit.value = fracHit;
+      fracMat.uniforms.uPow.value = 7.0 + Math.sin(t * 0.2) * 1.0 + bass * 0.6; frac.visible = wCg > 0.01; }
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     beams.instanceMatrix.needsUpdate = true; beams.instanceColor.needsUpdate = true;
     for (let i = 0; i < NL.length; i++) NL[i].intensity = 0.5 + bass * 1 + kick * 60; // 10a low idle
@@ -485,7 +513,7 @@ export function createVisual(canvas, audio) {
     // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = flashLeft > 0 ? 1.5 + kick * 0.3 : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
+    bloom.strength = flashLeft > 0 ? 2.2 + kick * 0.4 /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.30 : 0.05; // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
