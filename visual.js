@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// Pass 11b: looks A concrete colonnade -> B neon spectrum beams -> C mandala spokes (instanced lerp crossfade); near-plane 1.0 + sightline clamp (min radial dist, size caps), onset-locked punch/flash. Was 10a: foot light-leak fix (neon lights high+deep, low idle) + hypnagogic morph colonnade<->mandala<->abstract spiral (~6s). Was 9c: solid opaque Box colonnade (one InstancedMesh, grey only), neon as lights only, half-res Reflector + wet plane floor in lower third; no afterimage/kaleido/additive. Was 9b: opaque mid-grey concrete mass, wet floor raised into view (Reflector half-res + shiny wet plane + neon strips), kaleido/afterimage cut for sharp stills; 9a kick violence + void clamp kept. Was 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
+// Pass 12a: sightline cull, portal fractal, pulse, no-void snatch. Was 11b: looks A concrete colonnade -> B neon spectrum beams -> C mandala spokes (instanced lerp crossfade); near-plane 1.0 + sightline clamp (min radial dist, size caps), onset-locked punch/flash. Was 10a: foot light-leak fix (neon lights high+deep, low idle) + hypnagogic morph colonnade<->mandala<->abstract spiral (~6s). Was 9c: solid opaque Box colonnade (one InstancedMesh, grey only), neon as lights only, half-res Reflector + wet plane floor in lower third; no afterimage/kaleido/additive. Was 9b: opaque mid-grey concrete mass, wet floor raised into view (Reflector half-res + shiny wet plane + neon strips), kaleido/afterimage cut for sharp stills; 9a kick violence + void clamp kept. Was 9a: concrete/stone weight (grain map, rough+wet spec), neon backlight bleed, dense gates, full-res wet Reflector floor, harder kick violence; void clamp kept
 const W = 540, H = 960;
 const RINGS = 16, PER_RING = 5, SPACING = 3.0; // 9c solid colonnade // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
@@ -84,7 +84,7 @@ export function createVisual(canvas, audio) {
   const fracMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: false,
     uniforms: { uT: { value: 0 }, uA: { value: 0 }, uPow: { value: 8 }, uHit: { value: 0 } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `uniform float uT, uA, uPow, uHit; varying vec2 vUv;
+    fragmentShader: `precision highp float; uniform float uT, uA, uPow, uHit; varying vec2 vUv;
       float DE(vec3 p, out float trap){ vec3 z = p; float dr = 1.0, r = 0.0; trap = 1e9;
         for (int i = 0; i < 8; i++) { r = length(z); if (r > 2.0) break;
           float th = acos(clamp(z.z / r, -1.0, 1.0)) * uPow, ph = atan(z.y, z.x) * uPow;
@@ -96,13 +96,15 @@ export function createVisual(canvas, audio) {
         vec3 ro = vec3(0.0, 0.0, 1.55 - uHit * 0.25), rd = normalize(vec3(uv, -1.4));
         ro.xz = mat2(c, -s, s, c) * ro.xz; rd.xz = mat2(c, -s, s, c) * rd.xz;
         float d = 0.0, tr = 0.0, g = 0.0; int hit = 0;
-        for (int i = 0; i < 56; i++) { float h = DE(ro + rd * d, tr); g += 0.012 / (0.02 + h);
-          if (h < 0.0015) { hit = 1; break; } d += h; if (d > 4.0) break; }
+        for (int i = 0; i < 128; i++) { float h = DE(ro + rd * d, tr); g += 0.012 / (0.02 + h);
+          if (h < 0.0008 * (1.0 + d)) { hit = 1; break; } d += h * 0.85; if (d > 4.0) break; }
+        if (hit == 0 && d <= 4.0) hit = 1; // 12a: step-exhausted rays = surface (no black holes)
         vec3 neon = mix(vec3(1.0, 0.0, 0.8), vec3(0.0, 1.0, 0.95), clamp(tr * 1.4, 0.0, 1.0));
         vec3 col = hit == 1 ? neon * (0.35 + 0.65 * exp(-d)) : neon * g * 0.05;
-        gl_FragColor = vec4(col * (1.0 + uHit * 1.5), uA * (hit == 1 ? 1.0 : clamp(g * 0.05, 0.0, 0.8))); }` });
+        float edge = 1.0 - smoothstep(0.36, 0.5, length(vUv - 0.5)); col = max(col, neon * 0.12);
+        gl_FragColor = vec4(col * (1.0 + uHit * 1.5), uA * edge * (hit == 1 ? 1.0 : clamp(0.25 + g * 0.05, 0.0, 0.8))); }` });
   const frac = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), fracMat); frac.renderOrder = -1;
-  camera.add(frac); frac.position.set(0, 0, -30); frac.scale.set(2 * 30 * Math.tan(36 * Math.PI / 180) * W / H * 1.1, 2 * 30 * Math.tan(36 * Math.PI / 180) * 1.1, 1); scene.add(camera);
+  camera.add(frac); frac.position.set(0, 0, -30); frac.position.set(0, 0, -60); frac.scale.set(18, 18, 1); /* 12a: distant round portal (~35% column), not full fill */ scene.add(camera);
   let fracHit = 0;
   // 12 core: nested emissive rings at the vanishing point (structured, not fog blob)
   const core = new THREE.Group(); core.position.set(0, 0.6, -34); scene.add(core);
@@ -394,10 +396,11 @@ export function createVisual(canvas, audio) {
         // 11b hard sightline: non-A geometry stays skinny; near-camera everything shrinks hard
         const thin = 0.35 + wA * 1.2; sx = Math.min(sx, thin + (k === 4 ? wA * 4 + wB * 4.5 : 0)); sz = Math.min(sz, thin);
         sy = Math.min(sy, 1.2 + wA * 4 + wB * 4 + wC * 2.4);
-        const nearF = Math.min(1, Math.max(0, (-z - 1) / 7)); // 0 at z>-1 -> 1 at z<-8
+        const nearF = Math.min(1, Math.max(0, (-z - 3) / 12)); // 12a: 0 at z>-3 -> 1 at z<-15
+        sy = Math.min(sy, 4.4 * wA + 2.2 * (1 - wA)); if (wA < 0.98) { const nf = wA + (1 - wA) * nearF * nearF; sx *= nf; sz *= nf; sy *= 0.3 + 0.7 * nf; }
         if (morphF > 0.02 && morphF < 0.98) { sx *= 0.25 + 0.75 * nearF; sy *= 0.35 + 0.65 * nearF; sz *= 0.25 + 0.75 * nearF; }
         let px = mx(0), py = mx(1) - 0.6;
-        const minR = 2.3 + 0.5 * Math.min(sx, sy) + (z > -4 ? 1.4 : 0) + (wC > 0.3 ? 0.8 : 0); // 11b wider hole
+        const minR = 2.3 + 0.5 * Math.min(sx, sy) + (z > -6 ? 2.2 : 0) + (wC > 0.3 ? 1.2 : 0) + (1 - wA) * 0.6; // 11b wider hole
         const rr = Math.hypot(px, py) || 1e-3;
         if (rr < minR) { px *= minR / rr; py *= minR / rr; }
         pos.set(px, Math.max(FLOOR_Y + sy * 0.15, py + 0.6), z); q.setFromAxisAngle(zAxis, mx(5));
@@ -472,7 +475,7 @@ export function createVisual(canvas, audio) {
     camera.rotation.z += (Math.random() * 2 - 1) * shakeA * 0.1;
     camera.fov = 72 + kick * 6 + (fovSnap > 0 ? 16 : 0) + zPunch * 4; /* 12: FOV snap WIDER + thrust, springs back */ if (fovSnap > 0) fovSnap--; camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.03 + popS * 0.35; // 11a small pop — no lens shove root.scale.set(ks, ks, 1);
-    { const tp = 1 + bass * 0.12 + popS * 0.45; root.scale.set(tp, tp, 1); } // 12 punch-ref: tunnel pulse on sub (outward only)
+    { const tp = 1 + bass * 0.38 + (audio.sub || 0) * 0.2 + popS * 1.4; /* 12a: readable outward pulse */ root.scale.set(tp, tp, 1); } // 12 punch-ref: tunnel pulse on sub (outward only)
     camLight.position.copy(camera.position);
     camLight.intensity = 26 + bass * 35 + kick * 25;
     backLight.intensity = 25 + bass * 30 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
@@ -497,13 +500,13 @@ export function createVisual(canvas, audio) {
     if (onset && (t - lastFlashT) > 0.3) { // flash ≤3.3/s
       lastFlashT = t;
       flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
-      flashMode = peak > 0.75 ? 1 : (kick > 0.6 ? (Math.random() > 0.5 ? 2 : 3) : 4);
+      flashMode = peak > 0.75 ? 5 : (kick > 0.6 ? (Math.random() > 0.5 ? 2 : 3) : 4);
       gateLurch = GATE_SPACING * 1.0; // gate lurch one step
       afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
       popS = 0.32 + kick * 0.05; shakeA = 0.0; zPunch = 2.0; fovSnap = 3; // 11b harder onset, fov kick not lens shove hueSnap = (hueSnap + 1) % 5;
       hueSnap = (hueSnap + 1) % 5; // 12: re-enable colour rotation (was swallowed by comment)
-      flashMode = [2, 3, 5, 6, 7][hueSnap]; if (peak > 0.85) flashMode = 1; // 7b hue snap mag/cyan/white
+      flashMode = [2, 3, 5, 6, 7][hueSnap]; /* 12a: invert removed — could collapse to black void */ // 7b hue snap mag/cyan/white
     }
     if (false) { zPunch = Math.max(zPunch, 1.4 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.22 * kick); popS = Math.max(popS, 0.12 * kick); }
     const vd = Math.pow(0.78, Math.max(0.5, dt * 60));
