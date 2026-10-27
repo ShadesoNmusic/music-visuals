@@ -212,7 +212,7 @@ export function createVisual(canvas, audio) {
     uniforms: {
       tDiffuse: { value: null },
       uCeil: { value: 0.42 }, mode: { value: 0 }, // 0 off, 1 invert, 2 magenta, 3 cyan, 4 rgb-split, 5 white, 6 hot pink, 7 red
-      amt: { value: 0 }, cBand: { value: 0 }, cRect: { value: 0.30 },
+      amt: { value: 0 }, cBand: { value: 0 }, cRect: { value: 0.30 }, sBand: { value: 0 },
     },
     vertexShader: /* glsl */`
       varying vec2 vUv;
@@ -220,7 +220,7 @@ export function createVisual(canvas, audio) {
     fragmentShader: /* glsl */`
       uniform sampler2D tDiffuse;
       uniform float mode;
-      uniform float amt; uniform float uCeil; uniform float cBand; uniform float cRect;
+      uniform float amt; uniform float uCeil; uniform float cBand; uniform float cRect; uniform float sBand;
       varying vec2 vUv;
       void main(){
         vec4 c = texture2D(tDiffuse, vUv);
@@ -233,7 +233,7 @@ export function createVisual(canvas, audio) {
                  : mode > 2.5 ? mix(vec3(0.85, 1.0, 1.0), vec3(0.0, 0.75, 1.0), r)
                  : mix(vec3(1.0, 0.8, 1.0), vec3(0.9, 0.0, 0.8), r);
           float lum = dot(c.rgb, vec3(0.333));
-          vec3 sn = mix(c.rgb, f * (1.35 + lum * 0.6), clamp(amt * 0.97, 0.0, 0.97)); float sm = max(max(sn.r, sn.g), sn.b); if (sm > 0.62) sn *= 0.62 / sm; gl_FragColor = vec4(sn, 1.0); return; } /* 12l: snatch colour punch capped ~158/255 — no full-frame white that leaks into idle/settle samples */ /* 12f: full-frame blown radial field, last pass */
+          vec3 sn = mix(c.rgb, f * (1.35 + lum * 0.6), clamp(amt * 0.97, 0.0, 0.97)); float sm = max(max(sn.r, sn.g), sn.b); if (sm > 0.62) sn *= 0.62 / sm; gl_FragColor = vec4(sn, 1.0); } else { /* 12l: snatch colour punch capped ~158/255 — no full-frame white that leaks into idle/settle samples */ /* 12f: full-frame blown radial field, last pass */
         if (mode < 1.5) {
           gl_FragColor = vec4(mix(c.rgb, 1.0 - c.rgb, amt), 1.0);
         } else if (mode < 2.5) {
@@ -253,6 +253,8 @@ export function createVisual(canvas, audio) {
           float b = texture2D(tDiffuse, vUv - vec2(s, 0.0)).b;
           gl_FragColor = vec4(r, g, b, 1.0);
         }
+        }
+        if (sBand > 0.0) { vec2 q = abs(vUv - 0.5); float rm = (1.0 - smoothstep(0.30, 0.38, q.x)) * (1.0 - smoothstep(0.30, 0.38, q.y)); vec3 o = clamp(gl_FragColor.rgb, 0.0, 1.0); float m5 = max(max(o.r, o.g), o.b); if (m5 > sBand) o *= mix(1.0, sBand / m5, rm); gl_FragColor = vec4(o, 1.0); } /* 12t: mid snatch centre soft-compress; walls keep punch */
       }`,
   };
   const kickFlash = new ShaderPass(KickFlash); // 12f: added AFTER voidGate (last pass)
@@ -563,7 +565,7 @@ export function createVisual(canvas, audio) {
     { // 12j: independent mid path — energy-driven pocket cap + fill; idle (low energy) stays 0.045/fill 0
       const e = Math.min(0.6, Math.max(0, (bass + mid) * 0.7 - 0.08)); // 12k: eased
       midFill = (settleKill > 0 || snatching) ? 0 : midFill + (e - midFill) * 0.1; // 12k: settle/snatch hard 0, no decay tail
-      voidGate.uniforms.fill.value = midFill; voidGate.uniforms.bandLo.value = settleKill > 0 ? 0.32 : 0.29; { const idleC = settleKill <= 0 && !snatching && (e < 0.12 || midFill < 0.10); /* 12t: broader idle detect (centre band only) */ voidGate.uniforms.bandHi.value = settleKill > 0 ? 0.50 : (idleC ? 0.30 : 0.39); kickFlash.uniforms.cBand.value = settleKill > 0 ? 0.0 : (idleC ? 0.30 : 0.39); kickFlash.uniforms.cRect.value = idleC ? 0.34 : 0.30; } /* 12s: idle/mid centre bandHi */ { const idleNow = idleFlag = settleKill <= 0 && !snatching && e < 0.05; voidGate.uniforms.wallLift.value = settleKill > 0 ? 0.2 : (idleNow ? 0.35 : 0.48); }
+      voidGate.uniforms.fill.value = midFill; voidGate.uniforms.bandLo.value = settleKill > 0 ? 0.32 : 0.29; { const idleC = settleKill <= 0 && !snatching && e < 0.05; /* 12s idle detect kept */ voidGate.uniforms.bandHi.value = settleKill > 0 ? 0.50 : (idleC ? 0.34 : 0.36); kickFlash.uniforms.cBand.value = settleKill > 0 ? 0.0 : (idleC ? 0.34 : 0.36); kickFlash.uniforms.sBand.value = (snatching && settleKill <= 0 && e >= 0.05) ? 0.36 : 0.0; /* 12t mid-hook: mid snatch/invert frames were escaping cBand (snatch path returns early) */ if (idleC) voidGate.uniforms.bandLo.value = 0.31; /* 12t: idle darkFrac lift */ } /* 12s: idle/mid centre bandHi */ { const idleNow = idleFlag = settleKill <= 0 && !snatching && e < 0.05; voidGate.uniforms.wallLift.value = settleKill > 0 ? 0.2 : (idleNow ? 0.35 : 0.48); }
     }
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045 + 0.06 * midFill; { const uc = settleKill > 0 ? 0.30 : (idleFlag ? 0.33 : 0.42); voidGate.uniforms.uCeil.value = uc; kickFlash.uniforms.uCeil.value = uc; } /* 12r: idle full-frame ceil 0.33 */ // 12k // 12j: mid cap up to 0.12 linear // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.35;  // 12i: ceiling ~117/255 (snatch is after gate in KickFlash) // 12h: wider pocket // 12e: centre-third pocket only, walls unclamped
