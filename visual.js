@@ -104,6 +104,12 @@ export function createVisual(canvas, audio) {
   const frac = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), fracMat); frac.renderOrder = -1;
   camera.add(frac); frac.position.set(0, 0, -30); frac.scale.set(2 * 30 * Math.tan(36 * Math.PI / 180) * W / H * 1.1, 2 * 30 * Math.tan(36 * Math.PI / 180) * 1.1, 1); scene.add(camera);
   let fracHit = 0;
+  // 12 core: nested emissive rings at the vanishing point (structured, not fog blob)
+  const core = new THREE.Group(); core.position.set(0, 0.6, -34); scene.add(core);
+  const coreMats = [];
+  for (let i = 0; i < 6; i++) { const m = new THREE.MeshBasicMaterial({ color: NEONS[i % 4], toneMapped: false, fog: false });
+    coreMats.push(m); const ring = new THREE.Mesh(new THREE.TorusGeometry(0.9 + i * 0.75, 0.035 + i * 0.01, 6, 64), m);
+    ring.rotation.z = i * 0.4; core.add(ring); }
   const ringZ = new Float32Array(RINGS);
   const ringPhase = new Float32Array(RINGS);
   const seed = new Float32Array(COUNT);
@@ -406,7 +412,10 @@ export function createVisual(canvas, audio) {
     }
     { const wCg = morphI === 1 ? morphF : morphI === 2 ? 1 - morphF : 0; fracHit = Math.max(fracHit * 0.85, audio.onset ? 1 : 0);
       fracMat.uniforms.uA.value = Math.max(wCg, 0.25 * (1 - (morphI === 0 ? 1 - morphF : morphI === 2 ? morphF : 0))) * 0.95 /* denser neon baseline under B too */; fracMat.uniforms.uT.value = t + bassTime * 0.05; fracMat.uniforms.uHit.value = fracHit;
-      fracMat.uniforms.uPow.value = 7.0 + Math.sin(t * 0.2) * 1.0 + bass * 0.6; frac.visible = wCg > 0.01; }
+      fracMat.uniforms.uPow.value = 7.0 + Math.sin(t * 0.2) * 1.0 + bass * 0.6; frac.visible = fracMat.uniforms.uA.value > 0.01; }
+    for (let i = 0; i < core.children.length; i++) { const c = core.children[i]; c.rotation.z += dt * (0.2 + i * 0.07) * (i % 2 ? -1 : 1);
+      c.scale.setScalar(1 + bass * 0.15 * (i + 1) / 6 + fracHit * 0.25); coreMats[i].color.copy(NEONS[(i + hueSnap) % 4]).multiplyScalar(0.6 + bass * 0.8 + fracHit * 4); }
+    mat.emissive.setHex(flashLeft > 0 ? 0xffffff : 0x0c0a12); mat.emissiveIntensity = flashLeft > 0 ? 1.6 : 1; // 12: in-scene near-white emissive spike on onset
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     beams.instanceMatrix.needsUpdate = true; beams.instanceColor.needsUpdate = true;
     for (let i = 0; i < NL.length; i++) NL[i].intensity = 0.5 + bass * 1 + kick * 60; // 10a low idle
@@ -461,7 +470,7 @@ export function createVisual(canvas, audio) {
     camera.lookAt((Math.random() * 2 - 1) * shakeA * 2, 0.6 + (Math.random() * 2 - 1) * shakeA * 2, -40 + zPunch * 6); // lookAt snap
     camera.rotateX(-0.2); // 9c look-down: floor ≈ lower third
     camera.rotation.z += (Math.random() * 2 - 1) * shakeA * 0.1;
-    camera.fov = 72 - kick * 22 - (flashLeft > 0 ? 8 : 0) - (fovSnap > 0 ? 14 : 0); if (fovSnap > 0) fovSnap--; camera.updateProjectionMatrix();
+    camera.fov = 72 + kick * 6 + (fovSnap > 0 ? 16 : 0) + zPunch * 4; /* 12: FOV snap WIDER + thrust, springs back */ if (fovSnap > 0) fovSnap--; camera.updateProjectionMatrix();
     const ks = 1 + kick * 0.03 + popS * 0.35; // 11a small pop — no lens shove root.scale.set(ks, ks, 1);
     { const tp = 1 + bass * 0.12 + popS * 0.45; root.scale.set(tp, tp, 1); } // 12 punch-ref: tunnel pulse on sub (outward only)
     camLight.position.copy(camera.position);
@@ -484,7 +493,7 @@ export function createVisual(canvas, audio) {
     // Kick flash / snatch — 1–3f, ≤3/s, from kick + bassAtt (not continuous bass)
     // 6e: fewer false opens that spiked idle ~185
     const onset = !!audio.onset; // 11a punches only on real onsets
-    if (onset) { popS = 0.3; shakeA = 0.3; zPunch = 1.8; gateLurch = GATE_SPACING * 0.5; afterCool = Math.max(afterCool, 18); }
+    if (onset) { popS = 0.3; shakeA = 0.0; zPunch = 1.8; gateLurch = GATE_SPACING * 0.5; afterCool = Math.max(afterCool, 18); }
     if (onset && (t - lastFlashT) > 0.3) { // flash ≤3.3/s
       lastFlashT = t;
       flashLeft = 2 + (peak > 0.8 ? 1 : 0); // 2–3 frames
@@ -492,7 +501,7 @@ export function createVisual(canvas, audio) {
       gateLurch = GATE_SPACING * 1.0; // gate lurch one step
       afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
-      popS = 0.32 + kick * 0.05; shakeA = 0.3; zPunch = 2.0; fovSnap = 3; // 11b harder onset, fov kick not lens shove hueSnap = (hueSnap + 1) % 5;
+      popS = 0.32 + kick * 0.05; shakeA = 0.0; zPunch = 2.0; fovSnap = 3; // 11b harder onset, fov kick not lens shove hueSnap = (hueSnap + 1) % 5;
       flashMode = [2, 3, 5, 6, 7][hueSnap]; if (peak > 0.85) flashMode = 1; // 7b hue snap mag/cyan/white
     }
     if (false) { zPunch = Math.max(zPunch, 1.4 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.22 * kick); popS = Math.max(popS, 0.12 * kick); }
@@ -523,7 +532,7 @@ export function createVisual(canvas, audio) {
     // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = flashLeft > 0 ? 2.2 + kick * 0.4 /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
+    bloom.strength = flashLeft > 0 ? 3.0 + kick * 0.6 /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
     voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.30 : 0.05; // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
