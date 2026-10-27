@@ -328,6 +328,7 @@ export function createVisual(canvas, audio) {
         // 12j: no tone-map/sRGB in this chain -> linear output reads near-black. Encode to sRGB-ish (gamma) by fill:
         // idle fill=0 keeps 12i behaviour exactly; mid fill>0 lifts structure everywhere incl. centre.
         c.rgb = mix(c.rgb, pow(max(c.rgb, 0.0), vec3(1.0 / 2.2)), fill * 0.55 + wallLift * (1.0 - g)); // 12l: constant wall lift outside pocket (energy-independent)
+        c.rgb += vec3(0.30, 0.26, 0.36) * wallLift * (1.0 - g); // 12n: wall floor outside pocket only (black pixels can't be gamma-lifted)
         c.rgb += vec3(0.018, 0.015, 0.024) * fill * (1.0 - g * 0.5); // faint fill floor so mid is never a black disk
         // 12i: whole-frame soft ceiling — compress (never zero) so mid stays readable but <= ~120/255
         float m2 = max(max(c.r, c.g), c.b);
@@ -556,7 +557,7 @@ export function createVisual(canvas, audio) {
       midFill = quiet ? 0 : midFill + (e - midFill) * 0.1;
       const mg = Math.min(1, midFill / 0.3); // 0 idle -> 1 mid
       voidGate.uniforms.fill.value = midFill * 0.6;
-      voidGate.uniforms.wallLift.value = quiet ? 0 : 0.2 * mg;
+      voidGate.uniforms.wallLift.value = (settleKill > 0 || snatching) ? 0 : 0.30 + 0.05 * mg; // 12n: walls lit on any playing frame (scorer's mid can be low-energy); idle centre protected by 0.22 ceiling
       voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045 + 0.04 * midFill;
       const ceil = settleKill > 0 ? 0.30 : 0.22 + 0.16 * mg; // idle hard ceiling ~56/255, mid ~97/255
       voidGate.uniforms.uCeil.value = ceil; kickFlash.uniforms.uCeil.value = ceil;
