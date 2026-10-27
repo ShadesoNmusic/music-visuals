@@ -35,7 +35,7 @@ export function createVisual(canvas, audio) {
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
 
-  scene.add(new THREE.AmbientLight(0xd8d4e0, 3.2) /* 12e mid floor */);
+  scene.add(new THREE.AmbientLight(0xd8d4e0, 2.6) /* 12e mid floor */);
   const camLight = new THREE.PointLight(0xffffff, 90, 45, 1.3);
   scene.add(camLight);
 
@@ -317,7 +317,7 @@ export function createVisual(canvas, audio) {
       void main(){
         vec4 c = texture2D(tDiffuse, vUv);
         vec2 d = vUv - 0.5; d.x *= aspect;
-        float g = 1.0 - smoothstep(radius * 0.55, radius * 1.1, length(d)); // 12g: softer pocket edge
+        float g = 1.0 - smoothstep(radius * 0.80, radius * 1.0, length(d)); // 12h: harder pocket edge
         float useCap = mix(cap, 0.45, open); // snatch may punch; never fully unclamp
         float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
         float k = l > useCap ? useCap / l : 1.0;
@@ -421,7 +421,7 @@ export function createVisual(canvas, audio) {
     mat.emissive.setHex(flashLeft > 0 ? 0xffffff : 0x2a2636); mat.emissiveIntensity = flashLeft > 0 ? 1.6 : 1; // 12: in-scene near-white emissive spike on onset
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     beams.instanceMatrix.needsUpdate = true; beams.instanceColor.needsUpdate = true;
-    for (let i = 0; i < NL.length; i++) NL[i].intensity = 3 + bass * 2 + kick * 60; // 10a low idle
+    for (let i = 0; i < NL.length; i++) NL[i].intensity = 2 + bass * 1.5 + kick * 60; // 10a low idle
 
 
 
@@ -477,8 +477,8 @@ export function createVisual(canvas, audio) {
     const ks = 1 + kick * 0.03 + popS * 0.35; // 11a small pop — no lens shove root.scale.set(ks, ks, 1);
     { const tp = 1 + bass * 0.38 + (audio.sub || 0) * 0.2 + popS * 1.4; /* 12a: readable outward pulse */ root.scale.set(tp, tp, 1); } // 12 punch-ref: tunnel pulse on sub (outward only)
     camLight.position.copy(camera.position);
-    camLight.intensity = 90 + bass * 35 + kick * 25;
-    backLight.intensity = 140 + bass * 30 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
+    camLight.intensity = 70 + bass * 30 + kick * 25;
+    backLight.intensity = 70 + bass * 25 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
     // glob tracks camera lightly — stays in centre-third for hook overlay
     glob.position.x = camera.position.x * 0.35;
     glob.position.y = camera.position.y * 0.35;
@@ -541,9 +541,9 @@ export function createVisual(canvas, audio) {
     flashLeft = Math.max(0, flashLeft | 0); voidGate.uniforms.open.value = 0; /* 12f: never open; KickFlash is after gate */ // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045; // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
-    voidGate.uniforms.radius.value = 0.30; // 12e: centre-third pocket only, walls unclamped
+    voidGate.uniforms.radius.value = 0.35; // 12h: wider pocket // 12e: centre-third pocket only, walls unclamped
     scene.background.setHex(BG); // 12d: no blackout between hits
-    renderer.toneMappingExposure = snatching ? 2.8 : (settleKill > 0 ? 0.9 : 1.12) /* 12d: keep mid readable */;
+    renderer.toneMappingExposure = snatching ? 2.8 : (settleKill > 0 ? 0.9 : 1.0) /* 12d: keep mid readable */;
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
