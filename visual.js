@@ -502,6 +502,7 @@ export function createVisual(canvas, audio) {
       afterCool = Math.max(afterCool, 30);
       glitchLeft = Math.max(glitchLeft, 8);
       popS = 0.32 + kick * 0.05; shakeA = 0.0; zPunch = 2.0; fovSnap = 3; // 11b harder onset, fov kick not lens shove hueSnap = (hueSnap + 1) % 5;
+      hueSnap = (hueSnap + 1) % 5; // 12: re-enable colour rotation (was swallowed by comment)
       flashMode = [2, 3, 5, 6, 7][hueSnap]; if (peak > 0.85) flashMode = 1; // 7b hue snap mag/cyan/white
     }
     if (false) { zPunch = Math.max(zPunch, 1.4 * Math.max(kick, bassHit)); shakeA = Math.max(shakeA, 0.22 * kick); popS = Math.max(popS, 0.12 * kick); }
