@@ -12,7 +12,7 @@ const W = 540, H = 960;
 const RINGS = 16, PER_RING = 5, SPACING = 3.0; // 9c solid colonnade // sparse fat pillars; flats beat ring density
 const COUNT = RINGS * PER_RING;
 const DEPTH = RINGS * SPACING;
-const BG = 0x020205;
+const BG = 0x0c0b14; // 12g: lifted bg/fog colour
 
 function cosPalette(t, a, b, c, d, out) {
   const f = (i) => Math.min(1, Math.max(0, a[i] + b[i] * Math.cos(6.28318 * (c[i] * t + d[i]))));
@@ -30,13 +30,13 @@ export function createVisual(canvas, audio) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG);
-  scene.fog = new THREE.FogExp2(BG, 0.042); // 12: deeper depth fog
+  scene.fog = new THREE.FogExp2(0x1a1826, 0.026) /* 12g: thinner, brighter fog */; // 12: deeper depth fog
   const camera = new THREE.PerspectiveCamera(72, W / H, 1.0, 200); // 11a near clip — slabs clip before filling lens
   camera.position.set(0, 0, 3);
   const root = new THREE.Group(); scene.add(root);
 
-  scene.add(new THREE.AmbientLight(0xd8d4e0, 1.5) /* 12e mid floor */);
-  const camLight = new THREE.PointLight(0xffffff, 40, 30, 1.6);
+  scene.add(new THREE.AmbientLight(0xd8d4e0, 3.2) /* 12e mid floor */);
+  const camLight = new THREE.PointLight(0xffffff, 90, 45, 1.3);
   scene.add(camLight);
 
   // 9c concrete grain (tiny CanvasTexture)
@@ -49,7 +49,7 @@ export function createVisual(canvas, audio) {
   const FLOOR_Y = -1.3, CEIL_Y = 3.4;
   const geo = new THREE.BoxGeometry(1, 1, 1);
   grainTex.repeat.set(2, 3); // 12: finer concrete aggregate
-  const mat = new THREE.MeshPhysicalMaterial({ color: 0x8e889c, map: grainTex, roughnessMap: grainTex, bumpMap: grainTex, bumpScale: 0.6, roughness: 0.88, metalness: 0.04, clearcoat: 0.18, clearcoatRoughness: 0.55, emissive: 0x0c0a12, flatShading: true }); // 12 (sbcode roughness/metalness): grain bump + damp clearcoat sheen
+  const mat = new THREE.MeshPhysicalMaterial({ color: 0xb4aec4, map: grainTex, roughnessMap: grainTex, bumpMap: grainTex, bumpScale: 0.6, roughness: 0.88, metalness: 0.04, clearcoat: 0.18, clearcoatRoughness: 0.55, emissive: 0x2a2636, flatShading: true }); // 12 (sbcode roughness/metalness): grain bump + damp clearcoat sheen
   const pillars = new THREE.InstancedMesh(geo, mat, COUNT);
   pillars.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   root.add(pillars);
@@ -317,7 +317,7 @@ export function createVisual(canvas, audio) {
       void main(){
         vec4 c = texture2D(tDiffuse, vUv);
         vec2 d = vUv - 0.5; d.x *= aspect;
-        float g = 1.0 - smoothstep(radius * 0.85, radius, length(d)); // 6e: harder pocket edge
+        float g = 1.0 - smoothstep(radius * 0.55, radius * 1.1, length(d)); // 12g: softer pocket edge
         float useCap = mix(cap, 0.45, open); // snatch may punch; never fully unclamp
         float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
         float k = l > useCap ? useCap / l : 1.0;
@@ -396,7 +396,7 @@ export function createVisual(canvas, audio) {
         // 11b hard sightline: non-A geometry stays skinny; near-camera everything shrinks hard
         const thin = 0.35 + wA * 1.2; sx = Math.min(sx, thin + (k === 4 ? wA * 4 + wB * 4.5 : 0)); sz = Math.min(sz, thin);
         sy = Math.min(sy, 1.2 + wA * 4 + wB * 4 + wC * 2.4);
-        const nearF = Math.min(1, Math.max(0, (-z - 3) / 12)); // 12a: 0 at z>-3 -> 1 at z<-15
+        const nearF = 0.35 + 0.65 * Math.min(1, Math.max(0, (-z - 3) / 12)); // 12g: floor so colonnade never empties // 12a: 0 at z>-3 -> 1 at z<-15
         sy = Math.min(sy, 4.4 * wA + 2.2 * (1 - wA)); if (wA < 0.98) { const nf = wA + (1 - wA) * nearF * nearF; sx *= nf; sz *= nf; sy *= 0.3 + 0.7 * nf; }
         if (morphF > 0.02 && morphF < 0.98) { sx *= 0.25 + 0.75 * nearF; sy *= 0.35 + 0.65 * nearF; sz *= 0.25 + 0.75 * nearF; }
         let px = mx(0), py = mx(1) - 0.6;
@@ -418,10 +418,10 @@ export function createVisual(canvas, audio) {
       fracMat.uniforms.uPow.value = 7.0 + Math.sin(t * 0.2) * 1.0 + bass * 0.6; frac.visible = fracMat.uniforms.uA.value > 0.01; }
     for (let i = 0; i < core.children.length; i++) { const c = core.children[i]; c.rotation.z += dt * (0.2 + i * 0.07) * (i % 2 ? -1 : 1);
       c.scale.setScalar(1 + bass * 0.15 * (i + 1) / 6 + fracHit * 0.25); coreMats[i].color.copy(NEONS[(i + hueSnap) % 4]).multiplyScalar(0.04 + kick * 0.5 + fracHit * 3) /* 12d: rings near-black idle */; }
-    mat.emissive.setHex(flashLeft > 0 ? 0xffffff : 0x0c0a12); mat.emissiveIntensity = flashLeft > 0 ? 1.6 : 1; // 12: in-scene near-white emissive spike on onset
+    mat.emissive.setHex(flashLeft > 0 ? 0xffffff : 0x2a2636); mat.emissiveIntensity = flashLeft > 0 ? 1.6 : 1; // 12: in-scene near-white emissive spike on onset
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     beams.instanceMatrix.needsUpdate = true; beams.instanceColor.needsUpdate = true;
-    for (let i = 0; i < NL.length; i++) NL[i].intensity = 0.5 + bass * 1 + kick * 60; // 10a low idle
+    for (let i = 0; i < NL.length; i++) NL[i].intensity = 3 + bass * 2 + kick * 60; // 10a low idle
 
 
 
@@ -477,8 +477,8 @@ export function createVisual(canvas, audio) {
     const ks = 1 + kick * 0.03 + popS * 0.35; // 11a small pop — no lens shove root.scale.set(ks, ks, 1);
     { const tp = 1 + bass * 0.38 + (audio.sub || 0) * 0.2 + popS * 1.4; /* 12a: readable outward pulse */ root.scale.set(tp, tp, 1); } // 12 punch-ref: tunnel pulse on sub (outward only)
     camLight.position.copy(camera.position);
-    camLight.intensity = 38 + bass * 35 + kick * 25;
-    backLight.intensity = 45 + bass * 30 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
+    camLight.intensity = 90 + bass * 35 + kick * 25;
+    backLight.intensity = 140 + bass * 30 + kick * 260; backLight.color.copy(NEONS[hueSnap % 4]);
     // glob tracks camera lightly — stays in centre-third for hook overlay
     glob.position.x = camera.position.x * 0.35;
     glob.position.y = camera.position.y * 0.35;
@@ -543,7 +543,7 @@ export function createVisual(canvas, audio) {
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045; // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.30; // 12e: centre-third pocket only, walls unclamped
     scene.background.setHex(BG); // 12d: no blackout between hits
-    renderer.toneMappingExposure = snatching ? 2.8 : (settleKill > 0 ? 0.85 : 1.0) /* 12d: keep mid readable */;
+    renderer.toneMappingExposure = snatching ? 2.8 : (settleKill > 0 ? 0.9 : 1.12) /* 12d: keep mid readable */;
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
