@@ -101,8 +101,8 @@ export function createVisual(canvas, audio) {
         if (hit == 0 && d <= 4.0) hit = 1; // 12a: step-exhausted rays = surface (no black holes)
         vec3 neon = mix(vec3(1.0, 0.0, 0.8), vec3(0.0, 1.0, 0.95), clamp(tr * 1.4, 0.0, 1.0));
         vec3 col = hit == 1 ? neon * (0.35 + 0.65 * exp(-d)) : neon * g * 0.05;
-        float edge = 1.0 - smoothstep(0.36, 0.5, length(vUv - 0.5)); col = max(col, neon * 0.12);
-        gl_FragColor = vec4(col * (1.0 + uHit * 1.5), uA * edge * (hit == 1 ? 1.0 : clamp(0.25 + g * 0.05, 0.0, 0.8))); }` });
+        float edge = 1.0 - smoothstep(0.36, 0.5, length(vUv - 0.5)); col = max(col, neon * (0.015 + uHit * 0.10)); col *= 0.30 + 0.70 * clamp(uHit, 0.0, 1.0); /* 12d: portal near-dark at idle */
+        gl_FragColor = vec4(col * (1.0 + uHit * 1.5), uA * (0.40 + 0.60 * clamp(uHit, 0.0, 1.0)) * edge * (hit == 1 ? 1.0 : clamp(0.25 + g * 0.05, 0.0, 0.8))); }` });
   const frac = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), fracMat); frac.renderOrder = -1;
   camera.add(frac); frac.position.set(0, 0, -30); frac.position.set(0, 0, -60); frac.scale.set(18, 18, 1); /* 12a: distant round portal (~35% column), not full fill */ scene.add(camera);
   let fracHit = 0;
@@ -308,7 +308,7 @@ export function createVisual(canvas, audio) {
   let glitchLeft = 0, afterCool = 0, settleKill = 0;
   // 6b: radial void gate + centre luma clamp (LAST pass) — caps pocket ≤120/255 outside snatch
   const VoidGate = {
-    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, radius: { value: 0.42 }, aspect: { value: W / H }, open: { value: 0 } },
+    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, radius: { value: 0.46 }, aspect: { value: W / H }, open: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec2 vUv;
       void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -417,7 +417,7 @@ export function createVisual(canvas, audio) {
       fracMat.uniforms.uA.value = Math.max(wCg, 0.25 * (1 - (morphI === 0 ? 1 - morphF : morphI === 2 ? morphF : 0))) * 0.95 /* denser neon baseline under B too */; fracMat.uniforms.uT.value = t + bassTime * 0.05; fracMat.uniforms.uHit.value = fracHit;
       fracMat.uniforms.uPow.value = 7.0 + Math.sin(t * 0.2) * 1.0 + bass * 0.6; frac.visible = fracMat.uniforms.uA.value > 0.01; }
     for (let i = 0; i < core.children.length; i++) { const c = core.children[i]; c.rotation.z += dt * (0.2 + i * 0.07) * (i % 2 ? -1 : 1);
-      c.scale.setScalar(1 + bass * 0.15 * (i + 1) / 6 + fracHit * 0.25); coreMats[i].color.copy(NEONS[(i + hueSnap) % 4]).multiplyScalar(0.6 + bass * 0.8 + fracHit * 4); }
+      c.scale.setScalar(1 + bass * 0.15 * (i + 1) / 6 + fracHit * 0.25); coreMats[i].color.copy(NEONS[(i + hueSnap) % 4]).multiplyScalar(0.04 + kick * 0.5 + fracHit * 3) /* 12d: rings near-black idle */; }
     mat.emissive.setHex(flashLeft > 0 ? 0xffffff : 0x0c0a12); mat.emissiveIntensity = flashLeft > 0 ? 1.6 : 1; // 12: in-scene near-white emissive spike on onset
     pillars.instanceMatrix.needsUpdate = true; pillars.instanceColor.needsUpdate = true;
     beams.instanceMatrix.needsUpdate = true; beams.instanceColor.needsUpdate = true;
@@ -537,12 +537,12 @@ export function createVisual(canvas, audio) {
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
     bloom.strength = flashLeft > 0 ? 3.0 + kick * 0.6 /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
-    voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
+    flashLeft = Math.max(0, flashLeft | 0); voidGate.uniforms.open.value = flashLeft > 0 ? 1 : 0; // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
-    voidGate.uniforms.cap.value = settleKill > 0 ? 0.30 : 0.05; // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
+    voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045; // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.46; // 11c
-    scene.background.setHex(flashLeft > 0 ? BG : 0x000000); // blackout between hits
-    renderer.toneMappingExposure = flashLeft > 0 ? 2.8 : (settleKill > 0 ? 0.62 : (afterCool > 0 ? 0.85 : 0.85));
+    scene.background.setHex(BG); // 12d: no blackout between hits
+    renderer.toneMappingExposure = flashLeft > 0 ? 2.8 : (settleKill > 0 ? 0.80 : 0.95) /* 12d: keep mid readable */;
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;
