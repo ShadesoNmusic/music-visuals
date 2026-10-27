@@ -233,7 +233,7 @@ export function createVisual(canvas, audio) {
                  : mode > 2.5 ? mix(vec3(0.85, 1.0, 1.0), vec3(0.0, 0.75, 1.0), r)
                  : mix(vec3(1.0, 0.8, 1.0), vec3(0.9, 0.0, 0.8), r);
           float lum = dot(c.rgb, vec3(0.333));
-          gl_FragColor = vec4(mix(c.rgb, f * (1.35 + lum * 0.6), clamp(amt * 0.97, 0.0, 0.97)), 1.0); return; } /* 12f: full-frame blown radial field, last pass */
+          vec3 sn = mix(c.rgb, f * (1.35 + lum * 0.6), clamp(amt * 0.97, 0.0, 0.97)); float sm = max(max(sn.r, sn.g), sn.b); if (sm > 0.62) sn *= 0.62 / sm; gl_FragColor = vec4(sn, 1.0); return; } /* 12l: snatch colour punch capped ~158/255 — no full-frame white that leaks into idle/settle samples */ /* 12f: full-frame blown radial field, last pass */
         if (mode < 1.5) {
           gl_FragColor = vec4(mix(c.rgb, 1.0 - c.rgb, amt), 1.0);
         } else if (mode < 2.5) {
@@ -307,12 +307,12 @@ export function createVisual(canvas, audio) {
   let glitchLeft = 0, afterCool = 0, settleKill = 0;
   // 6b: radial void gate + centre luma clamp (LAST pass) — caps pocket ≤120/255 outside snatch
   const VoidGate = {
-    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, uCeil: { value: 0.46 }, fill: { value: 0 }, radius: { value: 0.30 }, aspect: { value: W / H }, open: { value: 0 } },
+    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, uCeil: { value: 0.46 }, fill: { value: 0 }, wallLift: { value: 0.35 }, radius: { value: 0.30 }, aspect: { value: W / H }, open: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec2 vUv;
       void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: /* glsl */`
-      uniform sampler2D tDiffuse; uniform float cap; uniform float radius; uniform float aspect; uniform float open; uniform float uCeil; uniform float fill;
+      uniform sampler2D tDiffuse; uniform float cap; uniform float radius; uniform float aspect; uniform float open; uniform float uCeil; uniform float fill; uniform float wallLift;
       varying vec2 vUv;
       void main(){
         vec4 c = texture2D(tDiffuse, vUv);
@@ -327,7 +327,7 @@ export function createVisual(canvas, audio) {
         c.rgb *= mix(1.0, k * mix(0.90, 1.0, fill), g); // clamp + darken in pocket
         // 12j: no tone-map/sRGB in this chain -> linear output reads near-black. Encode to sRGB-ish (gamma) by fill:
         // idle fill=0 keeps 12i behaviour exactly; mid fill>0 lifts structure everywhere incl. centre.
-        c.rgb = mix(c.rgb, pow(max(c.rgb, 0.0), vec3(1.0 / 2.2)), fill * 0.55); // 12k: eased
+        c.rgb = mix(c.rgb, pow(max(c.rgb, 0.0), vec3(1.0 / 2.2)), fill * 0.55 + wallLift * (1.0 - g)); // 12l: constant wall lift outside pocket (energy-independent)
         c.rgb += vec3(0.018, 0.015, 0.024) * fill * (1.0 - g * 0.5); // faint fill floor so mid is never a black disk
         // 12i: whole-frame soft ceiling — compress (never zero) so mid stays readable but <= ~120/255
         float m2 = max(max(c.r, c.g), c.b);
@@ -553,7 +553,7 @@ export function createVisual(canvas, audio) {
     { // 12j: independent mid path — energy-driven pocket cap + fill; idle (low energy) stays 0.045/fill 0
       const e = Math.min(0.6, Math.max(0, (bass + mid) * 0.7 - 0.08)); // 12k: eased
       midFill = (settleKill > 0 || snatching) ? 0 : midFill + (e - midFill) * 0.1; // 12k: settle/snatch hard 0, no decay tail
-      voidGate.uniforms.fill.value = midFill;
+      voidGate.uniforms.fill.value = midFill; voidGate.uniforms.wallLift.value = settleKill > 0 ? 0.2 : 0.35;
     }
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045 + 0.06 * midFill; voidGate.uniforms.uCeil.value = settleKill > 0 ? 0.30 : 0.42; kickFlash.uniforms.uCeil.value = settleKill > 0 ? 0.30 : 0.42; // 12k // 12j: mid cap up to 0.12 linear // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.35;  // 12i: ceiling ~117/255 (snatch is after gate in KickFlash) // 12h: wider pocket // 12e: centre-third pocket only, walls unclamped
