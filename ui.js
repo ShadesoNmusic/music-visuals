@@ -1,8 +1,8 @@
-import { audio } from './audio.12am.js';
-import { createVisual } from './visual.12am.js';
-import { createExporter } from './export.12am.js';
+import { audio } from './audio.12an.js';
+import { createVisual } from './visual.12an.js';
+import { createExporter } from './export.12an.js';
 
-const PASS = '12am';
+const PASS = '12an';
 const tag = document.getElementById('pass-tag');
 if (tag) tag.textContent = 'PASS ' + PASS;
 
