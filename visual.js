@@ -1,4 +1,4 @@
-// PASS 12ai — kill centre grey wash (walls-only gamma/fill + shrink bandLo lift) + harden snatch bloom
+// PASS 12aj — lift centres into band (mild pocket gamma + bandLo×0.55) without flat grey wash; snatch harden kept
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -330,8 +330,8 @@ export function createVisual(canvas, audio) {
         c.rgb *= mix(1.0, k * mix(0.90, 1.0, fill), g); // clamp + darken in pocket
         // 12j: no tone-map/sRGB in this chain -> linear output reads near-black. Encode to sRGB-ish (gamma) by fill:
         // idle fill=0 keeps 12i behaviour exactly; mid fill>0 lifts structure everywhere incl. centre.
-        c.rgb = mix(c.rgb, pow(max(c.rgb, 0.0), vec3(1.0 / 2.2)), (fill * 0.55 + wallLift) * (1.0 - g)); /* 12ai: gamma walls-only — kill pocket grey wash */ // 12l: constant wall lift outside pocket (energy-independent)
-        c.rgb += vec3(0.018, 0.015, 0.024) * fill * (1.0 - g); /* 12ai: fill floor walls-only */ // faint fill floor so mid is never a black disk
+        c.rgb = mix(c.rgb, pow(max(c.rgb, 0.0), vec3(1.0 / 2.2)), fill * 0.22 * g + (fill * 0.55 + wallLift) * (1.0 - g)); /* 12aj: mild pocket gamma — lift centres, not flat wash */
+        c.rgb += vec3(0.018, 0.015, 0.024) * fill * (1.0 - g * 0.7); /* 12aj: slight pocket fill */
         // 12i: whole-frame soft ceiling — compress (never zero) so mid stays readable but <= ~120/255
         float m2 = max(max(c.r, c.g), c.b);
         if (m2 > uCeil) c.rgb *= uCeil / m2; // hue-preserving cap, never black
@@ -341,7 +341,7 @@ export function createVisual(canvas, audio) {
           float rm = (1.0 - smoothstep(0.30, 0.36, q.x)) * (1.0 - smoothstep(0.30, 0.36, q.y)) /* 12s: rect covers full centre-third crop */;
           float m3 = max(max(c.r, c.g), c.b);
           vec3 b = c.rgb;
-          if (m3 < bandLo) b += vec3(0.92, 0.86, 1.0) * (bandLo - m3) * 0.18; /* 12ai: shrink centre grey wash */
+          if (m3 < bandLo) b += vec3(0.92, 0.86, 1.0) * (bandLo - m3) * 0.55; /* 12aj: centre floor back into band, not full wash */
           else if (m3 > bandHi) b *= bandHi / m3;
           c.rgb = mix(c.rgb, b, rm);
         }
