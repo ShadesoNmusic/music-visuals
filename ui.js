@@ -1,6 +1,11 @@
-import { audio } from './audio.js?v=12ab';
-import { createVisual } from './visual.js?v=12ab';
-import { createExporter } from './export.js?v=12ab';
+const v = new URLSearchParams(location.search).get('v') || '12ac';
+const [{ audio }, { createVisual }, { createExporter }] = await Promise.all([
+  import(`./audio.js?v=${v}`),
+  import(`./visual.js?v=${v}`),
+  import(`./export.js?v=${v}`),
+]);
+const tag = document.getElementById('pass-tag');
+if (tag) tag.textContent = 'PASS ' + v;
 
 const $ = (id) => document.getElementById(id);
 const vis = createVisual($('c'), audio);
