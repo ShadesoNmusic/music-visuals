@@ -1,8 +1,8 @@
-import { audio } from './audio.12an.js';
-import { createVisual } from './visual.12an.js';
-import { createExporter } from './export.12an.js';
+import { audio } from './audio.12ao.js';
+import { createVisual } from './visual.12ao.js';
+import { createExporter } from './export.12ao.js';
 
-const PASS = '12an';
+const PASS = '12ao';
 const tag = document.getElementById('pass-tag');
 if (tag) tag.textContent = 'PASS ' + PASS;
 
