@@ -1,4 +1,4 @@
-// PASS 12ah — gate midFloor off quiet + restore quiet uCeil (idleNow 0.28)
+// PASS 12ai — kill centre grey wash (walls-only gamma/fill + shrink bandLo lift) + harden snatch bloom
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -234,7 +234,7 @@ export function createVisual(canvas, audio) {
                  : mode > 2.5 ? mix(vec3(0.85, 1.0, 1.0), vec3(0.0, 0.75, 1.0), r)
                  : mix(vec3(1.0, 0.8, 1.0), vec3(0.9, 0.0, 0.8), r);
           float lum = dot(c.rgb, vec3(0.333));
-          vec3 sn = mix(c.rgb, f * (1.35 + lum * 0.6), clamp(amt * 0.97, 0.0, 0.97)); float sm = max(max(sn.r, sn.g), sn.b); if (sm > 0.62) sn *= 0.62 / sm; gl_FragColor = vec4(sn, 1.0); } else { /* 12l: snatch colour punch capped ~158/255 — no full-frame white that leaks into idle/settle samples */ /* 12f: full-frame blown radial field, last pass */
+          vec3 sn = mix(c.rgb, f * (1.35 + lum * 0.6), clamp(amt * 0.97, 0.0, 0.97)); float sm = max(max(sn.r, sn.g), sn.b); if (sm > 0.92) sn *= 0.92 / sm /* 12ai: harder snatch blow */; gl_FragColor = vec4(sn, 1.0); } else { /* 12l: snatch colour punch capped ~158/255 — no full-frame white that leaks into idle/settle samples */ /* 12f: full-frame blown radial field, last pass */
         if (mode < 1.5) {
           gl_FragColor = vec4(mix(c.rgb, 1.0 - c.rgb, amt), 1.0);
         } else if (mode < 2.5) {
@@ -330,8 +330,8 @@ export function createVisual(canvas, audio) {
         c.rgb *= mix(1.0, k * mix(0.90, 1.0, fill), g); // clamp + darken in pocket
         // 12j: no tone-map/sRGB in this chain -> linear output reads near-black. Encode to sRGB-ish (gamma) by fill:
         // idle fill=0 keeps 12i behaviour exactly; mid fill>0 lifts structure everywhere incl. centre.
-        c.rgb = mix(c.rgb, pow(max(c.rgb, 0.0), vec3(1.0 / 2.2)), fill * 0.55 + wallLift * (1.0 - g)); // 12l: constant wall lift outside pocket (energy-independent)
-        c.rgb += vec3(0.018, 0.015, 0.024) * fill * (1.0 - g * 0.5); // faint fill floor so mid is never a black disk
+        c.rgb = mix(c.rgb, pow(max(c.rgb, 0.0), vec3(1.0 / 2.2)), (fill * 0.55 + wallLift) * (1.0 - g)); /* 12ai: gamma walls-only — kill pocket grey wash */ // 12l: constant wall lift outside pocket (energy-independent)
+        c.rgb += vec3(0.018, 0.015, 0.024) * fill * (1.0 - g); /* 12ai: fill floor walls-only */ // faint fill floor so mid is never a black disk
         // 12i: whole-frame soft ceiling — compress (never zero) so mid stays readable but <= ~120/255
         float m2 = max(max(c.r, c.g), c.b);
         if (m2 > uCeil) c.rgb *= uCeil / m2; // hue-preserving cap, never black
@@ -341,7 +341,7 @@ export function createVisual(canvas, audio) {
           float rm = (1.0 - smoothstep(0.30, 0.36, q.x)) * (1.0 - smoothstep(0.30, 0.36, q.y)) /* 12s: rect covers full centre-third crop */;
           float m3 = max(max(c.r, c.g), c.b);
           vec3 b = c.rgb;
-          if (m3 < bandLo) b += vec3(0.92, 0.86, 1.0) * (bandLo - m3);
+          if (m3 < bandLo) b += vec3(0.92, 0.86, 1.0) * (bandLo - m3) * 0.18; /* 12ai: shrink centre grey wash */
           else if (m3 > bandHi) b *= bandHi / m3;
           c.rgb = mix(c.rgb, b, rm);
         }
@@ -560,7 +560,7 @@ export function createVisual(canvas, audio) {
     // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = flashLeft > 0 ? 3.0 + kick * 0.6 /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
+    bloom.strength = flashLeft > 0 ? 4.6 + kick * 0.9 /* 12ai: harder snatch bloom */ /* 12 onset-only violence */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
     flashLeft = Math.max(0, flashLeft | 0); voidGate.uniforms.open.value = 0; /* 12f: never open; KickFlash is after gate */ // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     { // 12j: independent mid path — energy-driven pocket cap + fill; idle (low energy) stays 0.045/fill 0
@@ -573,7 +573,7 @@ export function createVisual(canvas, audio) {
     }
     voidGate.uniforms.radius.value = 0.35;  // 12i: ceiling ~117/255 (snatch is after gate in KickFlash) // 12h: wider pocket // 12e: centre-third pocket only, walls unclamped
     scene.background.setHex(BG); // 12d: no blackout between hits
-    renderer.toneMappingExposure = snatching ? 2.8 : (settleKill > 0 ? 0.9 : 1.05) /* 12d: keep mid readable */;
+    renderer.toneMappingExposure = snatching ? 3.4 /* 12ai */ : (settleKill > 0 ? 0.9 : 1.05) /* 12d: keep mid readable */;
     if (glitchLeft > 0) {
       glitch.uniforms.amount.value = 0.035 + kick * 0.03 + highHit * 0.025;
       glitch.uniforms.angle.value = (Math.random() * 2 - 1) * Math.PI;

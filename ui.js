@@ -2,7 +2,7 @@ import { audio } from './audio.js';
 import { createVisual } from './visual.js';
 import { createExporter } from './export.js';
 
-const PASS = '12ah';
+const PASS = '12ai';
 const tag = document.getElementById('pass-tag');
 if (tag) tag.textContent = 'PASS ' + PASS;
 
