@@ -1,9 +1,9 @@
-// PASS 12at — mid walls isolated to midBand; idle uCeil 0.26; settle cap/uCeil nudge
+// PASS 12au — kill grey wash (walls-only gamma + shrink lilac lift) + harden snatch bloom; colour-card leave
 import { audio } from './audio.12au.js';
 import { createVisual } from './visual.12au.js';
 import { createExporter } from './export.12au.js';
 
-const PASS = '12at';
+const PASS = '12au';
 const tag = document.getElementById('pass-tag');
 if (tag) tag.textContent = 'PASS ' + PASS;
 

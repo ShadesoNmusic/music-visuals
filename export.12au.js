@@ -1,4 +1,4 @@
-// PASS 12at — mid walls isolated to midBand; idle uCeil 0.26; settle cap/uCeil nudge
+// PASS 12au — kill grey wash (walls-only gamma + shrink lilac lift) + harden snatch bloom; colour-card leave
 // export.js — MediaRecorder 9:16 export + audio track (5b: no hook/BPM burn-in).
 
 const W = 1080, H = 1920;
