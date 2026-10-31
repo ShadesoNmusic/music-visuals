@@ -309,12 +309,12 @@ export function createVisual(canvas, audio) {
   let glitchLeft = 0, afterCool = 0, settleKill = 0;
   // 6b: radial void gate + centre luma clamp (LAST pass) — caps pocket ≤120/255 outside snatch
   const VoidGate = {
-    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, uCeil: { value: 0.46 }, fill: { value: 0 }, wallLift: { value: 0.35 }, bandLo: { value: 0.2 }, bandHi: { value: 0.42 }, radius: { value: 0.30 }, aspect: { value: W / H }, open: { value: 0 } },
+    uniforms: { tDiffuse: { value: null }, cap: { value: 0.40 }, uCeil: { value: 0.46 }, fill: { value: 0 }, wallLift: { value: 0.35 }, bandLo: { value: 0.2 }, bandHi: { value: 0.42 }, radius: { value: 0.30 }, aspect: { value: W / H }, open: { value: 0 }, idleFloor: { value: 0 } },
     vertexShader: /* glsl */`
       varying vec2 vUv;
       void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: /* glsl */`
-      uniform sampler2D tDiffuse; uniform float cap; uniform float radius; uniform float aspect; uniform float open; uniform float uCeil; uniform float fill; uniform float wallLift; uniform float bandLo; uniform float bandHi;
+      uniform sampler2D tDiffuse; uniform float cap; uniform float radius; uniform float aspect; uniform float open; uniform float uCeil; uniform float fill; uniform float wallLift; uniform float bandLo; uniform float bandHi; uniform float idleFloor;
       varying vec2 vUv;
       void main(){
         vec4 c = texture2D(tDiffuse, vUv);
@@ -334,7 +334,7 @@ export function createVisual(canvas, audio) {
         // 12i: whole-frame soft ceiling — compress (never zero) so mid stays readable but <= ~120/255
         float m2 = max(max(c.r, c.g), c.b);
         if (m2 > uCeil) c.rgb *= uCeil / m2; // hue-preserving cap, never black
-        c.rgb += vec3(0.28, 0.238, 0.364) * wallLift * (1.0 - g); /* 12v: lilac floor x1.4 outside pocket only */ // 12r: lilac wall floor outside pocket (black walls can't be gamma-lifted)
+        c.rgb += vec3(0.28, 0.238, 0.364) * wallLift * (1.0 - g); /* 12v: lilac floor x1.4 outside pocket only */ c.rgb += vec3(0.28, 0.238, 0.364) * idleFloor * pow(1.0 - g, 2.0); /* 12x: idle-only floor, sharp falloff toward centre */ // 12r: lilac wall floor outside pocket (black walls can't be gamma-lifted)
         { // 12q: soft centre-third band — lift dark up to bandLo (keeps structure, adds lilac floor), scale bright down to bandHi; never zero
           vec2 q = abs(vUv - 0.5);
           float rm = (1.0 - smoothstep(0.30, 0.36, q.x)) * (1.0 - smoothstep(0.30, 0.36, q.y)) /* 12s: rect covers full centre-third crop */;
@@ -565,7 +565,7 @@ export function createVisual(canvas, audio) {
     { // 12j: independent mid path — energy-driven pocket cap + fill; idle (low energy) stays 0.045/fill 0
       const e = Math.min(0.6, Math.max(0, (bass + mid) * 0.7 - 0.08)); // 12k: eased
       midFill = (settleKill > 0 || snatching) ? 0 : midFill + (e - midFill) * 0.1; // 12k: settle/snatch hard 0, no decay tail
-      voidGate.uniforms.fill.value = midFill; voidGate.uniforms.bandLo.value = settleKill > 0 ? 0.32 : 0.29; { const idleC = settleKill <= 0 && !snatching && e < 0.05; /* 12s idle detect kept */ voidGate.uniforms.bandHi.value = settleKill > 0 ? 0.50 : (idleC ? 0.34 : 0.36); kickFlash.uniforms.cBand.value = settleKill > 0 ? 0.0 : (idleC ? 0.34 : 0.36); kickFlash.uniforms.sBand.value = (snatching && settleKill <= 0 && e >= 0.05) ? 0.36 : 0.0; /* 12t mid-hook: mid snatch/invert frames were escaping cBand (snatch path returns early) */ if (idleC) voidGate.uniforms.bandLo.value = 0.31; /* 12t: idle darkFrac lift */ } /* 12s: idle/mid centre bandHi */ { const idleNow = idleFlag = settleKill <= 0 && !snatching && e < 0.05; voidGate.uniforms.wallLift.value = settleKill > 0 ? 0.2 : (idleNow ? 0.39 : 0.50); /* 12w: idle 0.39 darkFrac; mid 0.50 */ }
+      voidGate.uniforms.fill.value = midFill; voidGate.uniforms.bandLo.value = settleKill > 0 ? 0.32 : 0.29; { const idleC = settleKill <= 0 && !snatching && e < 0.05; /* 12s idle detect kept */ voidGate.uniforms.bandHi.value = settleKill > 0 ? 0.50 : (idleC ? 0.34 : 0.36); kickFlash.uniforms.cBand.value = settleKill > 0 ? 0.0 : (idleC ? 0.34 : 0.36); kickFlash.uniforms.sBand.value = (snatching && settleKill <= 0 && e >= 0.05) ? 0.36 : 0.0; /* 12t mid-hook: mid snatch/invert frames were escaping cBand (snatch path returns early) */ if (idleC) voidGate.uniforms.bandLo.value = 0.31; /* 12t: idle darkFrac lift */ } /* 12s: idle/mid centre bandHi */ { const idleNow = idleFlag = settleKill <= 0 && !snatching && e < 0.05; voidGate.uniforms.wallLift.value = settleKill > 0 ? 0.2 : (idleNow ? 0.35 : 0.50); voidGate.uniforms.idleFloor.value = idleNow ? 0.30 : 0.0; /* 12x: idle wallLift back 0.35 + centre-safe idle floor */ }
     }
     voidGate.uniforms.cap.value = settleKill > 0 ? 0.18 : 0.045 + 0.06 * midFill; { const uc = settleKill > 0 ? 0.30 : (idleFlag ? 0.33 : 0.42); voidGate.uniforms.uCeil.value = uc; kickFlash.uniforms.uCeil.value = uc; } /* 12r: idle full-frame ceil 0.33 */ // 12k // 12j: mid cap up to 0.12 linear // 12d // 11d settle 0.36->0.30; // 11c: idle pocket hard-dark (11b neon read 136.7)
     voidGate.uniforms.radius.value = 0.35;  // 12i: ceiling ~117/255 (snatch is after gate in KickFlash) // 12h: wider pocket // 12e: centre-third pocket only, walls unclamped
