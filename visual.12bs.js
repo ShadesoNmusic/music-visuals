@@ -569,7 +569,7 @@ export function createVisual(canvas, audio) {
     // 6d: wipe afterimage trail that kept settle ~146 after hard-cut snatch
     if (settleKill > 0) { dampBase = 0; settleKill--; }
     after.uniforms.damp.value = Math.pow(dampBase, Math.max(0.5, dt * 60));
-    bloom.strength = flashLeft > 0 ? 12.5 + kick * 2.4 /* 12br: massive Shorts punch bloom */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
+    bloom.strength = flashLeft > 0 ? 12.5 + kick * 2.4 /* 12bs: massive Shorts punch bloom */ : (settleKill > 0 || (afterCool > 0 && flashLeft <= 0) ? 0.05 : 0.12) + Math.min(0.12, kick * 0.15 + (kick > 0.3 ? bass * 0.03 + bassAtt * 0.02 : 0.0)); // 11d: mid/bassAtt bloom cut
     flashLeft = Math.max(0, flashLeft | 0); voidGate.uniforms.open.value = 0; /* 12f: never open; KickFlash is after gate */ // only the 1–3f snatch escapes the clamp
     // 6d: tighter settle clamp (idle floor) after snatch
     { // 12j: independent mid path — energy-driven pocket cap + fill; idle (low energy) stays 0.045/fill 0
