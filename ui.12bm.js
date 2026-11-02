@@ -1,4 +1,4 @@
-// PASS 12bm — restore 12bm band levels + mild wash kill + 12bk bloom/pulse
+// PASS 12bm — restore 12bj band levels + mild wash kill + 12bk bloom/pulse
 // PASS 12ay — settle floor (exp/walls/fill) + mid darkFrac; idle leave
 // PASS 12au — kill grey wash (walls-only gamma + shrink lilac lift) + harden snatch bloom; colour-card leave
 import { audio } from './audio.12bm.js';
