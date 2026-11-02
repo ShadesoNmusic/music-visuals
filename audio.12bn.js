@@ -1,4 +1,4 @@
-// PASS 12bn — idle2264120 + mid/settle floors (12bj settle/quiet + sharp pocket); keep 12bk bloom/pulse
+// PASS 12bn — idle <=120 + mid/settle floors (12bj settle/quiet + sharp pocket); keep 12bk bloom/pulse
 // PASS 12ay — settle floor (exp/walls/fill) + mid darkFrac; idle leave
 // PASS 12au — kill grey wash (walls-only gamma + shrink lilac lift) + harden snatch bloom; colour-card leave
 // audio.js — Synesthesia-style signals (01010). Pass 11a: 40–80Hz kick band onset (×1.4 vs ~1s avg OR low flux), min abs 0.12, 150ms refractory, one-shot `onset`, kick decay dt*5.5, smoothing 0.28.
